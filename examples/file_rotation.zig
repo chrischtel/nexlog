@@ -78,7 +78,7 @@ pub fn main() !void {
     try logger.log(.info, "Demonstration complete - check logs/test.log and logs/test.log.1-3", .{}, base_metadata);
 
     // List all log files
-    var dir = try std.fs.cwd().openDir("logs", .{});
+    var dir = try std.fs.cwd().openDir("logs", .{ .iterate = true });
     defer dir.close();
 
     var dir_iter = dir.iterate();

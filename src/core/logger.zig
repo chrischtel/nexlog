@@ -1,7 +1,8 @@
 const std = @import("std");
 const types = @import("types.zig");
-const config = @import("config.zig");
+const cfg = @import("config.zig");
 const errors = @import("errors.zig");
+const handlers = @import("../output/handlers.zig");
 
 const console = @import("../output/console.zig");
 const file = @import("../output/file.zig");
@@ -11,64 +12,57 @@ pub const Logger = struct {
     const Self = @This();
 
     allocator: std.mem.Allocator,
-    config: config.LogConfig,
+    config: cfg.LogConfig,
     mutex: std.Thread.Mutex,
+    handlers: std.ArrayList(handlers.LogHandler),
 
-    // Output handlers
-    console_handler: ?*console.ConsoleHandler,
-    file_handler: ?*file.FileHandler,
-    network_handler: ?*network.NetworkHandler,
-
-    pub fn init(allocator: std.mem.Allocator, cfg: config.LogConfig) !*Self {
+    pub fn init(allocator: std.mem.Allocator, config: cfg.LogConfig) !*Self {
         var logger = try allocator.create(Self);
 
         // Initialize base logger
         logger.* = .{
             .allocator = allocator,
-            .config = cfg,
+            .config = config, // Store the passed config
             .mutex = std.Thread.Mutex{},
-            .console_handler = null,
-            .file_handler = null,
-            .network_handler = null,
+            .handlers = std.ArrayList(handlers.LogHandler).init(allocator),
         };
 
         // Initialize console handler by default
-        const console_config = console.ConsoleConfig{
-            .use_stderr = true,
-            .enable_colors = cfg.enable_colors,
-            .buffer_size = cfg.buffer_size,
-        };
-        logger.console_handler = try console.ConsoleHandler.init(allocator, console_config);
-
-        // Initialize file handler if enabled
-        if (cfg.enable_file_logging) {
-            if (cfg.file_path) |path| {
-                const file_config = file.FileConfig{
-                    .path = path,
-                    .mode = .append,
-                    .max_size = cfg.max_file_size,
-                    .enable_rotation = cfg.enable_rotation,
-                    .max_rotated_files = cfg.max_rotated_files,
-                    .buffer_size = cfg.buffer_size,
-                };
-                logger.file_handler = try file.FileHandler.init(allocator, file_config);
-            }
+        if (config.enable_console) {
+            const console_config = console.ConsoleConfig{
+                .use_stderr = true,
+                .enable_colors = config.enable_colors,
+                .buffer_size = config.buffer_size,
+                .min_level = config.min_level,
+            };
+            var console_handler = try console.ConsoleHandler.init(allocator, console_config);
+            try logger.addHandler(console_handler.toLogHandler());
         }
 
-        // Network handler is initialized on demand through addNetworkHandler()
+        // Initialize file handler if enabled
+        if (config.enable_file_logging) {
+            if (config.file_path) |path| {
+                const file_config = file.FileConfig{
+                    .path = path,
+                    .max_size = config.max_file_size,
+                    .max_rotated_files = config.max_rotated_files,
+                    .enable_rotation = config.enable_rotation,
+                    .min_level = config.min_level,
+                };
+                var file_handler = try file.FileHandler.init(allocator, file_config);
+                try logger.addHandler(file_handler.toLogHandler());
+            }
+        }
 
         return logger;
     }
 
     pub fn deinit(self: *Self) void {
-        if (self.console_handler) |h| {
-            h.deinit();
-            self.console_handler = null;
+        // Deinit all handlers
+        for (self.handlers.items) |handler| {
+            handler.deinit();
         }
-        if (self.file_handler) |h| {
-            h.deinit();
-            self.file_handler = null;
-        }
+        self.handlers.deinit();
         self.allocator.destroy(self);
     }
 
@@ -83,6 +77,9 @@ pub const Logger = struct {
             return;
         }
 
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
         // Format message once for all handlers
         var temp_buffer: [4096]u8 = undefined;
         var fba = std.heap.FixedBufferAllocator.init(&temp_buffer);
@@ -92,56 +89,44 @@ pub const Logger = struct {
             args,
         );
 
-        // Send to all active handlers
-        if (self.console_handler) |h| {
-            h.write(level, message, metadata) catch |err| {
-                std.debug.print("Console handler error: {}\n", .{err});
-            };
-        }
-
-        if (self.file_handler) |h| {
-            h.write(level, message, metadata) catch |err| {
-                std.debug.print("File handler error: {}\n", .{err});
-            };
-        }
-
-        if (self.network_handler) |h| {
-            h.write(level, message, metadata) catch |err| {
-                std.debug.print("Network handler error: {}\n", .{err});
+        // Send to all handlers
+        for (self.handlers.items) |handler| {
+            handler.writeLog(level, message, metadata) catch |err| {
+                std.debug.print("Handler error: {}\n", .{err});
             };
         }
     }
 
-    // Helper methods for adding/removing handlers
-    pub fn addNetworkHandler(self: *Self, endpoint: network.NetworkEndpoint) !void {
-        if (self.network_handler != null) {
-            return error.HandlerAlreadyExists;
-        }
-
-        const network_config = network.NetworkConfig{
-            .endpoint = endpoint,
-            .buffer_size = self.config.buffer_size,
-        };
-        self.network_handler = try network.NetworkHandler.init(self.allocator, network_config);
+    // Add a new handler
+    pub fn addHandler(self: *Self, handler: handlers.LogHandler) !void {
+        try self.handlers.append(handler);
     }
 
-    pub fn removeNetworkHandler(self: *Self) void {
-        if (self.network_handler) |h| {
-            h.deinit();
-            self.network_handler = null;
+    // Remove a handler
+    pub fn removeHandler(self: *Self, handler: handlers.LogHandler) void {
+        for (self.handlers.items, 0..) |h, i| {
+            if (h.ctx == handler.ctx) {
+                _ = self.handlers.orderedRemove(i);
+                return;
+            }
         }
+    }
+
+    // Convenience method for adding a network handler
+    pub fn addNetworkHandler(self: *Self, network_config: network.NetworkConfig) !void {
+        var net_handler = try network.NetworkHandler.init(self.allocator, network_config);
+        try self.addHandler(net_handler.toLogHandler());
     }
 
     // Flush all handlers
     pub fn flush(self: *Self) !void {
-        if (self.console_handler) |h| {
-            try h.flush();
-        }
-        if (self.file_handler) |h| {
-            try h.flush();
-        }
-        if (self.network_handler) |h| {
-            try h.flush();
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        for (self.handlers.items) |handler| {
+            handler.flush() catch |err| {
+                std.debug.print("Flush error: {}\n", .{err});
+            };
         }
     }
 };

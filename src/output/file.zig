@@ -2,6 +2,7 @@ const std = @import("std");
 const types = @import("../core/types.zig");
 const errors = @import("../core/errors.zig");
 const buffer = @import("../utils/buffer.zig");
+const handlers = @import("handlers.zig");
 
 pub const FileConfig = struct {
     path: []const u8,
@@ -14,6 +15,7 @@ pub const FileConfig = struct {
     max_rotated_files: usize = 5,
     buffer_size: usize = 4096,
     flush_interval_ms: u32 = 1000,
+    min_level: types.LogLevel = .debug,
 };
 
 pub const FileHandler = struct {
@@ -57,12 +59,16 @@ pub const FileHandler = struct {
         if (self.file) |file| {
             file.close();
         }
-        // circular_buffer is not optional, so directly deinit it
         self.circular_buffer.deinit();
         self.allocator.destroy(self);
     }
 
-    pub fn write(self: *Self, level: types.LogLevel, message: []const u8, metadata: ?types.LogMetadata) !void {
+    pub fn writeLog(self: *Self, level: types.LogLevel, message: []const u8, metadata: ?types.LogMetadata) !void {
+        // Skip if below minimum level
+        if (@intFromEnum(level) < @intFromEnum(self.config.min_level)) {
+            return;
+        }
+
         self.mutex.lock();
         defer self.mutex.unlock();
 
@@ -96,7 +102,6 @@ pub const FileHandler = struct {
                 while (true) {
                     const bytes_read = self.circular_buffer.read(&temp_buffer) catch |err| {
                         if (err == errors.BufferError.BufferUnderflow) {
-                            // No more data to read
                             break;
                         }
                         return err;
@@ -165,5 +170,15 @@ pub const FileHandler = struct {
             self.file = try std.fs.cwd().createFile(self.config.path, .{});
             self.current_size = 0;
         }
+    }
+
+    // Interface conversion method
+    pub fn toLogHandler(self: *Self) handlers.LogHandler {
+        return handlers.LogHandler.init(
+            self,
+            writeLog,
+            flush,
+            deinit,
+        );
     }
 };

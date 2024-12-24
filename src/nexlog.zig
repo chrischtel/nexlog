@@ -20,6 +20,12 @@ pub const utils = struct {
     pub const pool = @import("utils/pool.zig");
 };
 
+pub const output = struct {
+    pub const console = @import("output/console.zig");
+    pub const file = @import("output/file.zig");
+    pub const handler = @import("output/handlers.zig");
+};
+
 // Re-export main types and functions
 pub const Logger = core.logger.Logger;
 pub const LogLevel = core.types.LogLevel;
@@ -52,7 +58,7 @@ pub const CategoryRule = analysis.patterns.CategoryRule;
 pub const VariableRule = analysis.patterns.VariableRule;
 
 // Re-export utility functionality
-pub const Buffer = utils.buffer.Buffer;
+pub const CircularBuffer = utils.buffer.CircularBuffer;
 pub const Pool = utils.pool.Pool;
 
 // Example test

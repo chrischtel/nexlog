@@ -1,11 +1,13 @@
 const std = @import("std");
 const types = @import("../core/types.zig");
-const errors = @import("../core/errors.zig");
+const handlers = @import("handlers.zig");
 
 pub const ConsoleConfig = struct {
-    use_stderr: bool = true,
     enable_colors: bool = true,
-    buffer_size: usize = 4096,
+    min_level: types.LogLevel = .debug,
+    use_stderr: bool = true,
+    buffer_size: usize = 4096, // Default buffer size of 4KB
+
 };
 
 pub const ConsoleHandler = struct {
@@ -13,64 +15,62 @@ pub const ConsoleHandler = struct {
 
     allocator: std.mem.Allocator,
     config: ConsoleConfig,
-    mutex: std.Thread.Mutex,
-    writer: std.fs.File.Writer,
-    buffer: []u8,
-    buffer_pos: usize,
 
     pub fn init(allocator: std.mem.Allocator, config: ConsoleConfig) !*Self {
-        const self = try allocator.create(Self);
-
-        self.* = .{
+        const handler = try allocator.create(Self);
+        handler.* = .{
             .allocator = allocator,
             .config = config,
-            .mutex = std.Thread.Mutex{},
-            .writer = if (config.use_stderr) std.io.getStdErr().writer() else std.io.getStdOut().writer(),
-            .buffer = try allocator.alloc(u8, config.buffer_size),
-            .buffer_pos = 0,
         };
-
-        return self;
+        return handler;
     }
 
     pub fn deinit(self: *Self) void {
-        self.allocator.free(self.buffer);
         self.allocator.destroy(self);
     }
 
-    pub fn write(self: *Self, level: types.LogLevel, message: []const u8, metadata: ?types.LogMetadata) !void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
-        var fba = std.heap.FixedBufferAllocator.init(self.buffer);
-        const allocator = fba.allocator();
-
-        // Format timestamp
-        const timestamp = if (metadata) |m| m.timestamp else std.time.timestamp();
-        const time_str = try std.fmt.allocPrint(allocator, "[{d}] ", .{timestamp});
-
-        // Format log level with colors if enabled
-        const level_str = if (self.config.enable_colors)
-            try std.fmt.allocPrint(allocator, "{s}[{s}]\x1b[0m ", .{ level.toColor(), level.toString() })
-        else
-            try std.fmt.allocPrint(allocator, "[{s}] ", .{level.toString()});
-
-        // Write to console with optional metadata
-        try self.writer.writeAll(time_str);
-        try self.writer.writeAll(level_str);
-
-        if (metadata) |m| {
-            const meta_str = try std.fmt.allocPrint(allocator, "[{s}:{d}] ", .{ m.file, m.line });
-            try self.writer.writeAll(meta_str);
+    pub fn log(
+        self: *Self,
+        level: types.LogLevel,
+        message: []const u8,
+        metadata: ?types.LogMetadata,
+    ) !void {
+        if (@intFromEnum(level) < @intFromEnum(self.config.min_level)) {
+            return;
         }
 
-        try self.writer.writeAll(message);
-        try self.writer.writeAll("\n");
+        const writer = if (self.config.use_stderr)
+            std.io.getStdErr().writer()
+        else
+            std.io.getStdOut().writer();
+
+        // Write timestamp
+        const timestamp = if (metadata) |m| m.timestamp else std.time.timestamp();
+        try writer.print("[{d}] ", .{timestamp});
+
+        // Write log level with colors if enabled
+        if (self.config.enable_colors) {
+            try writer.print("{s}[{s}]\x1b[0m ", .{ level.toColor(), level.toString() });
+        } else {
+            try writer.print("[{s}] ", .{level.toString()});
+        }
+
+        // Write message
+        try writer.print("{s}\n", .{message});
     }
 
     pub fn flush(self: *Self) !void {
-        // For console output, we don't need to do anything special for flushing
-        // as we write immediately, but we keep this method for consistency with other handlers
+        // Console output is immediately flushed, so this is a no-op
         _ = self;
+    }
+
+    /// Convert to generic LogHandler interface
+    pub fn toLogHandler(self: *Self) handlers.LogHandler {
+        return handlers.LogHandler.init(
+            self,
+            ConsoleHandler.log,
+            ConsoleHandler.flush,
+            ConsoleHandler.deinit,
+        );
     }
 };
