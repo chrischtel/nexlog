@@ -18,6 +18,7 @@ A modern, high-performance logging library for Zig featuring colorized output, f
 - 🎯 **Multiple log levels** (trace, debug, info, warn, err, critical)
 
 ## Quick Start
+> QUICK START EXAMPLE NEEDS TO BE UPDATED, Please check out the examples
 
 ```zig
 const std = @import("std");
