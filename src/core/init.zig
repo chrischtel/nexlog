@@ -1,4 +1,3 @@
-// src/core/init.zig
 const std = @import("std");
 const logger = @import("logger.zig");
 const config = @import("config.zig");
@@ -31,8 +30,8 @@ pub const GlobalState = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        if (self.default_logger) |l| {
-            l.deinit();
+        if (self.default_logger) |log| {
+            log.deinit();
             self.default_logger = null;
         }
         self.allocator = null;
@@ -50,6 +49,12 @@ pub fn init(allocator: std.mem.Allocator) !void {
         .enable_colors = true,
         .enable_file_logging = false,
         .file_path = null,
+        .buffer_size = 4096,
+        .async_mode = false,
+        .enable_metadata = true,
+        .max_file_size = 10 * 1024 * 1024,
+        .enable_rotation = true,
+        .max_rotated_files = 5,
     };
     return initWithConfig(allocator, default_config);
 }
@@ -85,11 +90,17 @@ pub const LogBuilder = struct {
                 .enable_colors = true,
                 .enable_file_logging = false,
                 .file_path = null,
+                .buffer_size = 4096,
+                .async_mode = false,
+                .enable_metadata = true,
+                .max_file_size = 10 * 1024 * 1024,
+                .enable_rotation = true,
+                .max_rotated_files = 5,
             },
         };
     }
 
-    pub fn setMinLevel(self: *LogBuilder, level: types.LogLevel) *LogBuilder { // Updated to use types.LogLevel
+    pub fn setMinLevel(self: *LogBuilder, level: types.LogLevel) *LogBuilder {
         self.config.min_level = level;
         return self;
     }
@@ -99,9 +110,39 @@ pub const LogBuilder = struct {
         return self;
     }
 
+    pub fn setBufferSize(self: *LogBuilder, size: usize) *LogBuilder {
+        self.config.buffer_size = size;
+        return self;
+    }
+
     pub fn enableFileLogging(self: *LogBuilder, enable: bool, path: ?[]const u8) *LogBuilder {
         self.config.enable_file_logging = enable;
         self.config.file_path = path;
+        return self;
+    }
+
+    pub fn setMaxFileSize(self: *LogBuilder, size: usize) *LogBuilder {
+        self.config.max_file_size = size;
+        return self;
+    }
+
+    pub fn setMaxRotatedFiles(self: *LogBuilder, count: usize) *LogBuilder {
+        self.config.max_rotated_files = count;
+        return self;
+    }
+
+    pub fn enableRotation(self: *LogBuilder, enable: bool) *LogBuilder {
+        self.config.enable_rotation = enable;
+        return self;
+    }
+
+    pub fn enableAsyncMode(self: *LogBuilder, enable: bool) *LogBuilder {
+        self.config.async_mode = enable;
+        return self;
+    }
+
+    pub fn enableMetadata(self: *LogBuilder, enable: bool) *LogBuilder {
+        self.config.enable_metadata = enable;
         return self;
     }
 

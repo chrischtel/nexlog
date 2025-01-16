@@ -2,6 +2,7 @@ const LogLevel = @import("types.zig").LogLevel;
 
 pub const LogConfig = struct {
     min_level: LogLevel = .info,
+    enable_console: bool = true,
     enable_colors: bool = true,
     enable_file_logging: bool = false,
     file_path: ?[]const u8 = null,

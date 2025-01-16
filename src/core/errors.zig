@@ -1,7 +1,6 @@
 // errors.zig
 const std = @import("std");
 
-/// Core logging errors
 pub const LogError = error{
     BufferFull,
     InvalidLogLevel,
@@ -13,11 +12,9 @@ pub const LogError = error{
     MetadataError,
     FormattingError,
     FilterError,
-    AlreadyInitialized, // Added this error
-
+    AlreadyInitialized,
 };
 
-/// File-related errors
 pub const FileError = error{
     FileNotFound,
     PermissionDenied,
@@ -28,16 +25,15 @@ pub const FileError = error{
     LockTimeout,
 };
 
-/// Buffer-related errors
 pub const BufferError = error{
     BufferOverflow,
     BufferUnderflow,
     InvalidAlignment,
     FlushFailed,
     CompactionFailed,
+    BufferFull,
 };
 
-/// Configuration errors
 pub const ConfigError = error{
     InvalidLogLevel,
     InvalidBufferSize,
@@ -48,10 +44,13 @@ pub const ConfigError = error{
     ConflictingOptions,
 };
 
-/// Comprehensive error set combining all logging-related errors
-pub const Error = LogError || FileError || BufferError || ConfigError || std.fs.File.OpenError || std.fs.File.WriteError;
+pub const MemoryError = error{
+    OutOfMemory,
+};
 
-/// Error context structure for detailed error reporting
+/// Comprehensive error set combining all logging-related and memory errors
+pub const Error = LogError || FileError || BufferError || ConfigError || std.fs.File.OpenError || std.fs.File.WriteError || MemoryError;
+
 pub const ErrorContext = struct {
     file: []const u8,
     line: u32,
@@ -88,9 +87,7 @@ pub const ErrorContext = struct {
     }
 };
 
-/// Error handler type for custom error handling
 pub const ErrorHandler = struct {
-    /// Function pointer type for error callbacks
     pub const ErrorFn = *const fn (context: ErrorContext) Error!void;
 
     handler_fn: ErrorFn,
@@ -118,7 +115,6 @@ pub const ErrorHandler = struct {
     }
 };
 
-/// Helper function to create error context
 pub fn makeError(
     error_type: Error,
     message: []const u8,
@@ -128,7 +124,6 @@ pub fn makeError(
     return ErrorContext.init(error_type, message, file, line);
 }
 
-/// Default error handler that prints to stderr
 pub fn defaultErrorHandler(context: ErrorContext) Error!void {
     const stderr = std.io.getStdErr().writer();
     try context.format(stderr);

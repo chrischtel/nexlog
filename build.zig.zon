@@ -22,7 +22,12 @@
     // `zig build --fetch` can be used to fetch all dependencies of a package, recursively.
     // Once all dependencies are fetched, `zig build` no longer requires
     // internet connectivity.
-    .dependencies = .{},
+    .dependencies = .{
+        .libregex = .{
+            .url = "git+https://github.com/skota-io/libregex-z#a16cd6c86e9c6432e44d096c38e8204cd6f45e13",
+            .hash = "122016e968f2c8f958db2926ca271c6a8766edc9bee3f3498e2609371e16ac06485a",
+        },
+    },
     .paths = .{
         "build.zig",
         "build.zig.zon",

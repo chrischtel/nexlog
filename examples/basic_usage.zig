@@ -1,6 +1,67 @@
-// examples/basic_usage.zig
 const std = @import("std");
 const nexlog = @import("nexlog");
+
+/// Example struct to demonstrate context-based logging
+const OrderProcessor = struct {
+    logger: *nexlog.Logger,
+    department: []const u8,
+
+    pub fn init(logger: *nexlog.Logger, department: []const u8) OrderProcessor {
+        return .{
+            .logger = logger,
+            .department = department,
+        };
+    }
+
+    // Keep it as a member function with self parameter
+    fn createMetadata(self: *const OrderProcessor) nexlog.LogMetadata {
+        _ = self; // Tell Zig we're intentionally not using self for now
+        return .{
+            .timestamp = std.time.timestamp(),
+            .thread_id = 0, // In a real app, get actual thread ID
+            .file = @src().file,
+            .line = @src().line,
+            .function = @src().fn_name,
+        };
+    }
+
+    pub fn processOrder(self: *const OrderProcessor, order_id: u32) !void {
+        const metadata = self.createMetadata();
+
+        // Log the start of order processing
+        try self.logger.log(.debug, "Starting order processing [dept={s}, order_id={d}]", .{ self.department, order_id }, metadata);
+
+        // Simulate processing steps with appropriate logging
+        try self.validateOrder(order_id);
+        try self.processPayment(order_id);
+        try self.finalizeOrder(order_id);
+    }
+
+    fn validateOrder(self: *const OrderProcessor, order_id: u32) !void {
+        const metadata = self.createMetadata();
+        try self.logger.log(.debug, "Validating order {d}", .{order_id}, metadata);
+
+        // Demonstrate warning logs for specific conditions
+        if (order_id % 3 == 0) {
+            try self.logger.log(.warn, "Order {d} requires manual review - high value order", .{order_id}, metadata);
+        }
+    }
+
+    fn processPayment(self: *const OrderProcessor, order_id: u32) !void {
+        const metadata = self.createMetadata();
+        try self.logger.log(.info, "Processing payment for order {d}", .{order_id}, metadata);
+
+        // Demonstrate error logging
+        if (order_id % 5 == 0) {
+            try self.logger.log(.err, "Payment processing failed for order {d} - retry scheduled", .{order_id}, metadata);
+        }
+    }
+
+    fn finalizeOrder(self: *const OrderProcessor, order_id: u32) !void {
+        const metadata = self.createMetadata();
+        try self.logger.log(.info, "Order {d} processed successfully", .{order_id}, metadata);
+    }
+};
 
 pub fn main() !void {
     // Initialize allocator
@@ -8,20 +69,28 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Initialize logger with builder pattern
+    // Create logs directory if it doesn't exist
+    try std.fs.cwd().makePath("logs");
+
     var builder = nexlog.LogBuilder.init();
     try builder
         .setMinLevel(.debug)
         .enableColors(true)
-        .enableFileLogging(true, "app.log")
+        .setBufferSize(8192)
+        .enableFileLogging(true, "logs/app.log")
+        .setMaxFileSize(5 * 1024 * 1024)
+        .setMaxRotatedFiles(3)
+        .enableRotation(true)
+        .enableAsyncMode(true)
+        .enableMetadata(true)
         .build(allocator);
     defer nexlog.deinit();
 
     // Get the default logger
-    const logger = nexlog.getDefaultLogger().?;
+    const logger = nexlog.getDefaultLogger() orelse return error.LoggerNotInitialized;
 
-    // Create default metadata
-    const metadata = nexlog.LogMetadata{
+    // Create base metadata for general logging
+    const base_metadata = nexlog.LogMetadata{
         .timestamp = std.time.timestamp(),
         .thread_id = 0,
         .file = @src().file,
@@ -29,63 +98,15 @@ pub fn main() !void {
         .function = @src().fn_name,
     };
 
-    // Basic logging examples
-    try logger.log(.info, "Application started", .{}, metadata);
-    try logger.log(.debug, "Debug information: {s}", .{"initialization complete"}, metadata);
+    // Log application startup
+    try logger.log(.info, "Application starting", .{}, base_metadata);
 
-    // Simulate some application events
-    try simulateUserLogin(logger);
-    try processOrders(logger);
+    // Simulate some logging activity
+    try logger.log(.debug, "Initializing subsystems", .{}, base_metadata);
+    try logger.log(.info, "Processing started", .{}, base_metadata);
+    try logger.log(.warn, "Resource usage high", .{}, base_metadata);
 
-    // Log application shutdown
-    try logger.log(.info, "Application shutting down", .{}, metadata);
-}
-
-fn simulateUserLogin(logger: *nexlog.Logger) !void {
-    const metadata = nexlog.LogMetadata{
-        .timestamp = std.time.timestamp(),
-        .thread_id = 0,
-        .file = @src().file,
-        .line = @src().line,
-        .function = @src().fn_name,
-    };
-
-    try logger.log(.debug, "Attempting user login", .{}, metadata);
-
-    // Simulate some validation
-    const username = "test_user";
-    try logger.log(.debug, "Validating user: {s}", .{username}, metadata);
-
-    // Simulate successful login
-    try logger.log(.info, "User {s} logged in successfully", .{username}, metadata);
-}
-
-fn processOrders(logger: *nexlog.Logger) !void {
-    const metadata = nexlog.LogMetadata{
-        .timestamp = std.time.timestamp(),
-        .thread_id = 0,
-        .file = @src().file,
-        .line = @src().line,
-        .function = @src().fn_name,
-    };
-
-    const orders = [_]u32{ 1001, 1002, 1003 };
-
-    try logger.log(.info, "Processing {} orders", .{orders.len}, metadata);
-
-    for (orders) |order_id| {
-        try logger.log(.debug, "Processing order {}", .{order_id}, metadata);
-
-        // Simulate processing time
-        std.time.sleep(100 * std.time.ns_per_ms);
-
-        // Simulate occasional warnings
-        if (order_id == 1002) {
-            try logger.log(.warn, "Order {} requires manual review", .{order_id}, metadata);
-        }
-
-        try logger.log(.info, "Order {} processed successfully", .{order_id}, metadata);
-    }
-
-    try logger.log(.info, "All orders processed", .{}, metadata);
+    // Ensure all logs are written before shutdown
+    try logger.flush();
+    try logger.log(.info, "Application shutdown complete", .{}, base_metadata);
 }
