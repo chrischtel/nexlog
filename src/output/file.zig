@@ -60,10 +60,7 @@ pub const FileHandler = struct {
         };
 
         if (config.mode == .append) {
-            self.current_size.store(
-                (try self.file.?.getEndPos()),
-                .release
-            );
+            self.current_size.store((try self.file.?.getEndPos()), .release);
         }
 
         return self;
@@ -148,61 +145,61 @@ pub const FileHandler = struct {
     }
 
     fn rotate(self: *Self) !void {
-    if (self.file) |file| {
-        // Create backup first
-        const backup_path = try std.fmt.allocPrint(
-            self.allocator,
-            "{s}.tmp",
-            .{self.config.path},
-        );
-        defer self.allocator.free(backup_path);
-
-        file.close();
-        self.file = null;
-
-        // Safe rotation
-        try std.fs.cwd().rename(self.config.path, backup_path);
-
-        // Rotate existing files
-        var i: usize = self.config.max_rotated_files;
-        while (i > 0) : (i -= 1) {
-            const old_path = try std.fmt.allocPrint(
+        if (self.file) |file| {
+            // Create backup first
+            const backup_path = try std.fmt.allocPrint(
                 self.allocator,
-                "{s}.{d}",
-                .{ self.config.path, i - 1 },
+                "{s}.tmp",
+                .{self.config.path},
             );
-            defer self.allocator.free(old_path);
+            defer self.allocator.free(backup_path);
 
-            const new_path = try std.fmt.allocPrint(
+            file.close();
+            self.file = null;
+
+            // Safe rotation
+            try std.fs.cwd().rename(self.config.path, backup_path);
+
+            // Rotate existing files
+            var i: usize = self.config.max_rotated_files;
+            while (i > 0) : (i -= 1) {
+                const old_path = try std.fmt.allocPrint(
+                    self.allocator,
+                    "{s}.{d}",
+                    .{ self.config.path, i - 1 },
+                );
+                defer self.allocator.free(old_path);
+
+                const new_path = try std.fmt.allocPrint(
+                    self.allocator,
+                    "{s}.{d}",
+                    .{ self.config.path, i },
+                );
+                defer self.allocator.free(new_path);
+
+                std.fs.cwd().rename(old_path, new_path) catch |err| switch (err) {
+                    error.FileNotFound => continue,
+                    else => |e| {
+                        std.log.warn("Failed to rotate {s}: {}", .{ old_path, e });
+                        continue;
+                    },
+                };
+            }
+
+            // Move backup to .1
+            const final_path = try std.fmt.allocPrint(
                 self.allocator,
-                "{s}.{d}",
-                .{ self.config.path, i },
+                "{s}.1",
+                .{self.config.path},
             );
-            defer self.allocator.free(new_path);
+            defer self.allocator.free(final_path);
+            try std.fs.cwd().rename(backup_path, final_path);
 
-            std.fs.cwd().rename(old_path, new_path) catch |err| switch (err) {
-                error.FileNotFound => continue,
-                else => |e| {
-                    std.log.warn("Failed to rotate {s}: {}", .{old_path, e});
-                    continue;
-                },
-            };
+            // Create new file
+            self.file = try std.fs.cwd().createFile(self.config.path, .{});
+            self.current_size.store(0, .release);
         }
-
-        // Move backup to .1
-        const final_path = try std.fmt.allocPrint(
-            self.allocator,
-            "{s}.1",
-            .{self.config.path},
-        );
-        defer self.allocator.free(final_path);
-        try std.fs.cwd().rename(backup_path, final_path);
-
-        // Create new file
-        self.file = try std.fs.cwd().createFile(self.config.path, .{});
-        self.current_size.store(0, .release);
     }
-}
 
     // Interface conversion method
     pub fn toLogHandler(self: *Self) handlers.LogHandler {
