@@ -200,7 +200,6 @@ pub const FileHandler = struct {
             self.current_size.store(0, .release);
         }
     }
-
     // Interface conversion method
     pub fn toLogHandler(self: *Self) handlers.LogHandler {
         return handlers.LogHandler.init(
