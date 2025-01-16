@@ -27,29 +27,43 @@ pub const FileHandler = struct {
     mutex: std.Thread.Mutex,
     circular_buffer: *buffer.CircularBuffer,
     last_flush: i64,
-    current_size: usize,
+    current_size: std.atomic.Value(usize),
 
     pub fn init(allocator: std.mem.Allocator, config: FileConfig) !*Self {
+        // Validate config
+        if (config.path.len == 0) return error.InvalidPath;
+        if (config.buffer_size == 0) return error.InvalidBufferSize;
+        if (config.max_size == 0) return error.InvalidMaxSize;
+
         var self = try allocator.create(Self);
+        errdefer allocator.destroy(self);
+
+        var circular_buf = try buffer.CircularBuffer.init(allocator, config.buffer_size);
+        errdefer circular_buf.deinit();
 
         self.* = .{
             .allocator = allocator,
             .config = config,
             .file = null,
             .mutex = std.Thread.Mutex{},
-            .circular_buffer = try buffer.CircularBuffer.init(allocator, config.buffer_size),
+            .circular_buffer = circular_buf,
             .last_flush = std.time.timestamp(),
-            .current_size = 0,
+            .current_size = std.atomic.Value(usize).init(0),
         };
 
-        // Open or create the file
-        self.file = try std.fs.cwd().createFile(config.path, .{
+        // Safe file opening
+        self.file = std.fs.cwd().createFile(config.path, .{
             .truncate = config.mode == .truncate,
-        });
+        }) catch |err| {
+            self.circular_buffer.deinit();
+            return err;
+        };
 
-        // Get initial file size if appending
         if (config.mode == .append) {
-            self.current_size = try self.file.?.getEndPos();
+            self.current_size.store(
+                (try self.file.?.getEndPos()),
+                .release
+            );
         }
 
         return self;
@@ -85,7 +99,12 @@ pub const FileHandler = struct {
 
         // Write to buffer
         const bytes_written = try self.circular_buffer.write(formatted);
-        self.current_size += bytes_written;
+        const new_size = self.current_size.fetchAdd(bytes_written, .monotonic);
+
+        // Check rotation before writing
+        if (self.config.enable_rotation and new_size >= self.config.max_size) {
+            try self.rotate();
+        }
 
         // Check if we need to flush
         if (self.shouldFlush()) {
@@ -116,7 +135,7 @@ pub const FileHandler = struct {
             self.last_flush = std.time.timestamp();
 
             // Check rotation after flush
-            if (self.config.enable_rotation and self.current_size >= self.config.max_size) {
+            if (self.config.enable_rotation and self.current_size.load(.monotonic) >= self.config.max_size) {
                 try self.rotate();
             }
         }
@@ -129,48 +148,61 @@ pub const FileHandler = struct {
     }
 
     fn rotate(self: *Self) !void {
-        if (self.file) |file| {
-            file.close();
-            self.file = null;
+    if (self.file) |file| {
+        // Create backup first
+        const backup_path = try std.fmt.allocPrint(
+            self.allocator,
+            "{s}.tmp",
+            .{self.config.path},
+        );
+        defer self.allocator.free(backup_path);
 
-            // Rotate existing files
-            var i: usize = self.config.max_rotated_files;
-            while (i > 0) : (i -= 1) {
-                const old_path = try std.fmt.allocPrint(
-                    self.allocator,
-                    "{s}.{d}",
-                    .{ self.config.path, i - 1 },
-                );
-                defer self.allocator.free(old_path);
+        file.close();
+        self.file = null;
 
-                const new_path = try std.fmt.allocPrint(
-                    self.allocator,
-                    "{s}.{d}",
-                    .{ self.config.path, i },
-                );
-                defer self.allocator.free(new_path);
+        // Safe rotation
+        try std.fs.cwd().rename(self.config.path, backup_path);
 
-                std.fs.cwd().rename(old_path, new_path) catch |err| switch (err) {
-                    error.FileNotFound => continue,
-                    else => return err,
-                };
-            }
-
-            // Rename current log file
-            const backup_path = try std.fmt.allocPrint(
+        // Rotate existing files
+        var i: usize = self.config.max_rotated_files;
+        while (i > 0) : (i -= 1) {
+            const old_path = try std.fmt.allocPrint(
                 self.allocator,
-                "{s}.1",
-                .{self.config.path},
+                "{s}.{d}",
+                .{ self.config.path, i - 1 },
             );
-            defer self.allocator.free(backup_path);
+            defer self.allocator.free(old_path);
 
-            try std.fs.cwd().rename(self.config.path, backup_path);
+            const new_path = try std.fmt.allocPrint(
+                self.allocator,
+                "{s}.{d}",
+                .{ self.config.path, i },
+            );
+            defer self.allocator.free(new_path);
 
-            // Create new file
-            self.file = try std.fs.cwd().createFile(self.config.path, .{});
-            self.current_size = 0;
+            std.fs.cwd().rename(old_path, new_path) catch |err| switch (err) {
+                error.FileNotFound => continue,
+                else => |e| {
+                    std.log.warn("Failed to rotate {s}: {}", .{old_path, e});
+                    continue;
+                },
+            };
         }
+
+        // Move backup to .1
+        const final_path = try std.fmt.allocPrint(
+            self.allocator,
+            "{s}.1",
+            .{self.config.path},
+        );
+        defer self.allocator.free(final_path);
+        try std.fs.cwd().rename(backup_path, final_path);
+
+        // Create new file
+        self.file = try std.fs.cwd().createFile(self.config.path, .{});
+        self.current_size.store(0, .release);
     }
+}
 
     // Interface conversion method
     pub fn toLogHandler(self: *Self) handlers.LogHandler {
