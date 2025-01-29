@@ -132,14 +132,14 @@ pub const NetworkHandler = struct {
             now - self.last_flush >= self.config.flush_interval_ms / 1000;
     }
 
-    fn ensureConnection(self: *Self) !?std.net.Stream {
+    fn ensureConnection(self: *Self) !std.net.Stream {
         const now = std.time.timestamp();
 
         // Check if we need to reconnect
         if (self.connection) |conn| {
             return conn;
         } else if (now < self.reconnect_time) {
-            return null;
+            return error.ReconnectPending;
         }
 
         // Try to connect
@@ -148,6 +148,7 @@ pub const NetworkHandler = struct {
             self.config.endpoint.host,
             self.config.endpoint.port,
         ) catch |err| {
+            std.log.err("Failed to connect to {}:{} - {}", .{ self.config.endpoint.host, self.config.endpoint.port, err });
             // Set reconnect time on failure
             self.reconnect_time = now + @divTrunc(@as(i64, @intCast(self.config.retry_delay_ms)), 1000);
             return err;
@@ -157,6 +158,7 @@ pub const NetworkHandler = struct {
         if (self.config.endpoint.secure) {
             // Note: SSL implementation would go here
             // For now, we'll just error out
+            std.log.warn("SSL is not implemented yet, closing connection.");
             stream.close();
             return error.SslNotImplemented;
         }
