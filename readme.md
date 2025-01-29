@@ -1,4 +1,4 @@
-# Nexlog 
+# Nexlog
 
 A modern, high-performance logging library for Zig featuring colorized output, file rotation, and comprehensive metadata tracking.
 
@@ -18,51 +18,12 @@ A modern, high-performance logging library for Zig featuring colorized output, f
 - 🎯 **Multiple log levels** (trace, debug, info, warn, err, critical)
 
 ## Quick Start
-> QUICK START EXAMPLE NEEDS TO BE UPDATED, Please check out the examples
-
-```zig
-const std = @import("std");
-const nexlog = @import("nexlog");
-
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-
-    // Initialize with builder pattern
-    var builder = nexlog.LogBuilder.init(); // Create a mutable LogBuilder instance
-    try builder
-        .setMinLevel(.debug)
-        .enableColors(true)
-        .enableFileLogging(true, "app.log")
-        .build(allocator);
-
-    const logger = nexlog.getDefaultLogger().?;
-
-    // Create metadata
-    const metadata = nexlog.LogMetadata{
-        .timestamp = std.time.timestamp(),
-        .thread_id = 0,
-        .file = @src().file,
-        .line = @src().line,
-        .function = @src().fn_name,
-    };
-
-    try logger.log(.info, "Hello {s}!", .{"World"}, metadata);
-}
-```
-
-## Output Example
-
-```
-[1734269785] [INFO] Application started
-[1734269785] [DEBUG] Processing item 42
-[1734269785] [WARN] Resource usage high: 85%
-[1734269785] [ERROR] Connection failed: timeout
-```
+## Please note that the only examples currently available and up-to-date are in the `examples/` folder.
 
 ## Installation
 
-1. Add Nexlog as a dependency in your `build.zig.zon`:
+1.
+Add Nexlog as a dependency in your `build.zig.zon`:
 
 `zig fetch --save git+https://github.com/chrischtel/nexlog/`
 
