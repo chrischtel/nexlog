@@ -9,11 +9,11 @@ pub const core = struct {
     pub const types = @import("core/types.zig");
 };
 
-pub const analysis = struct {
-    pub const patterns = @import("analysis/patterns.zig");
-    // pub const predictor = @import("analysis/predictor.zig");
-    // pub const correlator = @import("analysis/correlator.zig");
-};
+//pub const analysis = struct {
+//pub const patterns = @import("analysis/patterns.zig");
+// pub const predictor = @import("analysis/predictor.zig");
+// pub const correlator = @import("analysis/correlator.zig");
+//};
 
 pub const utils = struct {
     pub const buffer = @import("utils/buffer.zig");
@@ -42,20 +42,20 @@ pub const getDefaultLogger = core.init.getDefaultLogger;
 pub const LogBuilder = core.init.LogBuilder;
 
 // Re-export pattern analysis types and functions
-pub const PatternType = core.types.PatternType;
-pub const PatternVariable = core.types.PatternVariable;
-pub const VarType = core.types.VarType;
-pub const PatternMetadata = core.types.PatternMetadata;
-pub const PatternMatch = core.types.PatternMatch;
-pub const PatternConfig = core.types.PatternConfig;
+// pub const PatternType = core.types.PatternType;
+// pub const PatternVariable = core.types.PatternVariable;
+// pub const VarType = core.types.VarType;
+// pub const PatternMetadata = core.types.PatternMetadata;
+// pub const PatternMatch = core.types.PatternMatch;
+// pub const PatternConfig = core.types.PatternConfig;
 
 // Re-export analysis functionality
-pub const PatternAnalyzer = analysis.patterns.PatternAnalyzer;
-pub const Pattern = analysis.patterns.Pattern;
-// pub const PatternPredictor = analysis.predictor.PatternPredictor;
-// pub const PatternCorrelator = analysis.correlator.PatternCorrelator;
-pub const CategoryRule = analysis.patterns.CategoryRule;
-pub const VariableRule = analysis.patterns.VariableRule;
+// pub const PatternAnalyzer = analysis.patterns.PatternAnalyzer;
+// pub const Pattern = analysis.patterns.Pattern;
+// // pub const PatternPredictor = analysis.predictor.PatternPredictor;
+// // pub const PatternCorrelator = analysis.correlator.PatternCorrelator;
+// pub const CategoryRule = analysis.patterns.CategoryRule;
+// pub const VariableRule = analysis.patterns.VariableRule;
 
 // Re-export utility functionality
 pub const CircularBuffer = utils.buffer.CircularBuffer;
