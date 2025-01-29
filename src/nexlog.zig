@@ -24,6 +24,7 @@ pub const output = struct {
     pub const console = @import("output/console.zig");
     pub const file = @import("output/file.zig");
     pub const handler = @import("output/handlers.zig");
+    pub const network = @import("output/network.zig");
 };
 
 // Re-export main types and functions

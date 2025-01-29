@@ -2,6 +2,7 @@ const std = @import("std");
 const types = @import("../core/types.zig");
 const errors = @import("../core/errors.zig");
 const buffer = @import("../utils/buffer.zig");
+const expect = std.testing.expect;
 
 pub const NetworkEndpoint = struct {
     host: []const u8,
@@ -167,3 +168,22 @@ pub const NetworkHandler = struct {
         return stream;
     }
 };
+
+test "NetworkHandler initialization and deinitialization" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+
+    const config = NetworkConfig{
+        .endpoint = .{
+            .host = "example.com",
+            .port = 8080,
+        },
+    };
+
+    var handler = try NetworkHandler.init(allocator, config);
+    defer handler.deinit();
+
+    try expect(handler.config.endpoint.host.len == config.endpoint.host.len);
+    try expect(handler.config.endpoint.port == config.endpoint.port);
+    try expect(handler.circular_buffer.buffer.len == config.buffer_size);
+}
