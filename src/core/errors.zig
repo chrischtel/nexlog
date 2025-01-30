@@ -13,6 +13,7 @@ pub const LogError = error{
     FormattingError,
     FilterError,
     AlreadyInitialized,
+    NotInitialized,
 };
 
 pub const FileError = error{

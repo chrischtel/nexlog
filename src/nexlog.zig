@@ -18,6 +18,7 @@ pub const core = struct {
 pub const utils = struct {
     pub const buffer = @import("utils/buffer.zig");
     pub const pool = @import("utils/pool.zig");
+    pub const json = @import("utils/json.zig");
 };
 
 pub const output = struct {
@@ -25,6 +26,7 @@ pub const output = struct {
     pub const file = @import("output/file.zig");
     pub const handler = @import("output/handlers.zig");
     pub const network = @import("output/network.zig");
+    pub const json_handler = @import("output/json.zig");
 };
 
 // Re-export main types and functions
@@ -61,6 +63,8 @@ pub const LogBuilder = core.init.LogBuilder;
 // Re-export utility functionality
 pub const CircularBuffer = utils.buffer.CircularBuffer;
 pub const Pool = utils.pool.Pool;
+pub const JsonValue = utils.json.JsonValue;
+pub const JsonError = utils.json.JsonError;
 
 // Example test
 test "basic log test" {
