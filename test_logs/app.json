@@ -1,0 +1,5 @@
+[
+{"metadata": {"timestamp": 1738258669, "thread_id": 0, "file": "examples/json_logging.zig", "line": 43, "function": "main"}, "level": "INFO", "message": "Application starting"},
+{"metadata": {"timestamp": 1738258669, "thread_id": 0, "file": "examples/json_logging.zig", "line": 43, "function": "main"}, "level": "WARN", "message": "This is a warning message (code: 123)"},
+{"metadata": {"timestamp": 1738258669, "thread_id": 0, "file": "examples/json_logging.zig", "line": 43, "function": "main"}, "level": "ERROR", "message": "An error occurred (code: E_UNKNOWN)"}
+]
