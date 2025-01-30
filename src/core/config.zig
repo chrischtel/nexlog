@@ -1,4 +1,5 @@
 const LogLevel = @import("types.zig").LogLevel;
+const format = @import("../utils/format.zig");
 
 pub const LogConfig = struct {
     min_level: LogLevel = .info,
@@ -12,4 +13,6 @@ pub const LogConfig = struct {
     buffer_size: usize = 4096,
     async_mode: bool = false,
     enable_metadata: bool = true,
+
+    format_config: ?format.FormatConfig = null,
 };

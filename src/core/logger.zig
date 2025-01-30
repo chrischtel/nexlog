@@ -7,7 +7,7 @@ const handlers = @import("../output/handlers.zig");
 const console = @import("../output/console.zig");
 const file = @import("../output/file.zig");
 const network = @import("../output/network.zig");
-
+const format = @import("../utils/format.zig");
 pub const Logger = struct {
     const Self = @This();
 
@@ -15,6 +15,7 @@ pub const Logger = struct {
     config: cfg.LogConfig,
     mutex: std.Thread.Mutex,
     handlers: std.ArrayList(handlers.LogHandler),
+    formatter: ?*format.Formatter, // Add formatter
 
     pub fn init(allocator: std.mem.Allocator, config: cfg.LogConfig) !*Self {
         var logger = try allocator.create(Self);
@@ -25,8 +26,12 @@ pub const Logger = struct {
             .config = config, // Store the passed config
             .mutex = std.Thread.Mutex{},
             .handlers = std.ArrayList(handlers.LogHandler).init(allocator),
+            .formatter = null,
         };
 
+        if (config.format_config) |fmt_config| {
+            logger.formatter = try format.Formatter.init(allocator, fmt_config);
+        }
         // Initialize console handler by default
         if (config.enable_console) {
             const console_config = console.ConsoleConfig{
@@ -58,6 +63,9 @@ pub const Logger = struct {
     }
 
     pub fn deinit(self: *Self) void {
+        if (self.formatter) |fmt| {
+            fmt.deinit();
+        }
         // Deinit all handlers
         for (self.handlers.items) |handler| {
             handler.deinit();
@@ -88,6 +96,13 @@ pub const Logger = struct {
             fmt,
             args,
         );
+
+        const formatted_message = if (self.formatter) |formatter| blk: {
+            const result = try formatter.format(level, message, metadata);
+            break :blk result;
+        } else message;
+
+        defer if (self.formatter != null) self.allocator.free(formatted_message);
 
         // Send to all handlers
         for (self.handlers.items) |handler| {
