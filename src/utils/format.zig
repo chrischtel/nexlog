@@ -118,14 +118,14 @@ pub const Formatter = struct {
                     return FormatError.InvalidPlaceholder;
                 }
 
-                const placeholder_name = self.config.template[start + 1 .. if (format == null) i else i - format.?.len - 1];
+                const placeholder_name = self.config.template[start + 1 .. if (fmt_spec == null) i else i - fmt_spec.?.len - 1];
                 const placeholder_type = try self.getPlaceholderType(placeholder_name);
 
                 try self.placeholder_cache.append(.{
                     .type = placeholder_type,
                     .start = start,
                     .end = i + 1,
-                    .format = format,
+                    .format = fmt_spec,
                 });
             }
             i += 1;
@@ -267,7 +267,9 @@ pub const Formatter = struct {
                 const epoch_day = @divFloor(epoch_seconds, 86400);
                 const day_seconds = @mod(epoch_seconds, 86400);
 
-                const year_day = @as(u16, @intCast(@mod(epoch_day + 719468, 146097) / 365.2425));
+                // Use integer division instead of floating point
+                // 146097 days = 400 years
+                const year_day = @as(u16, @intCast(@divFloor(epoch_day + 719468, 146097) * 400));
                 const year = 1970 + year_day;
 
                 const hour = @as(u8, @intCast(@divFloor(day_seconds, 3600)));
@@ -282,9 +284,6 @@ pub const Formatter = struct {
             },
             .custom => {
                 if (self.config.custom_timestamp_format) |fmt_str| {
-                    // Here you could implement custom timestamp formatting
-                    // using the provided format string
-                    // For now, fallback to unix timestamp
                     _ = fmt_str;
                     try std.fmt.format(result.writer(), "{d}", .{timestamp});
                 } else {
