@@ -3,7 +3,7 @@ const logger = @import("logger.zig");
 const config = @import("config.zig");
 const errors = @import("errors.zig");
 const types = @import("types.zig");
-
+const format = @import("../utils/format.zig");
 /// Global logger state
 pub const GlobalState = struct {
     is_initialized: bool = false,
@@ -98,6 +98,10 @@ pub const LogBuilder = struct {
                 .max_rotated_files = 5,
             },
         };
+    }
+    pub fn setFormatter(self: *LogBuilder, format_config: format.FormatConfig) *LogBuilder {
+        self.config.format_config = format_config;
+        return self;
     }
 
     pub fn setMinLevel(self: *LogBuilder, level: types.LogLevel) *LogBuilder {

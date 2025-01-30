@@ -19,6 +19,7 @@ pub const utils = struct {
     pub const buffer = @import("utils/buffer.zig");
     pub const pool = @import("utils/pool.zig");
     pub const json = @import("utils/json.zig");
+    pub const format = @import("utils/format.zig");
 };
 
 pub const output = struct {
