@@ -3,3 +3,5 @@
 zig-out/
 *.log
 logs/
+*test_*
+test*
