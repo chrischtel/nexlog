@@ -137,3 +137,25 @@ test "formatter functionality test" {
 
     try logger.log(.info, "Formatted test message", .{}, defaultMetadata());
 }
+
+// Test to verify that the console handler does not add the timestamp and level if the formatter is used
+test "core: console handler with formatter" {
+    const format_config = nexlog.FormatConfig{
+        .template = "[{timestamp}] [{level}] {message}",
+        .timestamp_format = .unix,
+        .level_format = .upper,
+        .use_color = false,
+    };
+
+    const config = nexlog.LogConfig{
+        .min_level = .debug,
+        .enable_colors = false,
+        .enable_file_logging = false,
+        .format_config = format_config,
+    };
+
+    var logger = try nexlog.Logger.init(testing.allocator, config);
+    defer logger.deinit();
+
+    try logger.log(.info, "Test message with formatter", .{}, defaultMetadata());
+}

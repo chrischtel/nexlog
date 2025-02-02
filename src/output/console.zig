@@ -7,7 +7,6 @@ pub const ConsoleConfig = struct {
     min_level: types.LogLevel = .debug,
     use_stderr: bool = true,
     buffer_size: usize = 4096, // Default buffer size of 4KB
-
 };
 
 pub const ConsoleHandler = struct {
@@ -44,15 +43,20 @@ pub const ConsoleHandler = struct {
         else
             std.io.getStdOut().writer();
 
-        // Write timestamp
-        const timestamp = if (metadata) |m| m.timestamp else std.time.timestamp();
-        try writer.print("[{d}] ", .{timestamp});
+        // Check if formatter is used
+        const is_formatted = metadata != null and metadata.?.file == null;
 
-        // Write log level with colors if enabled
-        if (self.config.enable_colors) {
-            try writer.print("{s}[{s}]\x1b[0m ", .{ level.toColor(), level.toString() });
-        } else {
-            try writer.print("[{s}] ", .{level.toString()});
+        if (!is_formatted) {
+            // Write timestamp
+            const timestamp = if (metadata) |m| m.timestamp else std.time.timestamp();
+            try writer.print("[{d}] ", .{timestamp});
+
+            // Write log level with colors if enabled
+            if (self.config.enable_colors) {
+                try writer.print("{s}[{s}]\x1b[0m ", .{ level.toColor(), level.toString() });
+            } else {
+                try writer.print("[{s}] ", .{level.toString()});
+            }
         }
 
         // Write message
