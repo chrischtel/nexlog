@@ -1,4 +1,3 @@
-// tests/core_tests.zig
 const std = @import("std");
 const testing = std.testing;
 const nexlog = @import("nexlog");
@@ -115,4 +114,26 @@ test "core: error conditions" {
     // Test with very long message
     const long_msg = "x" ** 1000;
     try logger.log(.info, "{s}", .{long_msg}, metadata);
+}
+
+// Test for formatter functionality
+test "formatter functionality test" {
+    const format_config = nexlog.FormatConfig{
+        .template = "[{timestamp}] [{level}] {message}",
+        .timestamp_format = .unix,
+        .level_format = .upper,
+        .use_color = false,
+    };
+
+    const config = nexlog.LogConfig{
+        .min_level = .debug,
+        .enable_colors = false,
+        .enable_file_logging = false,
+        .format_config = format_config,
+    };
+
+    var logger = try nexlog.Logger.init(testing.allocator, config);
+    defer logger.deinit();
+
+    try logger.log(.info, "Formatted test message", .{}, defaultMetadata());
 }

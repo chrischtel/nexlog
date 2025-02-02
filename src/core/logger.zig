@@ -106,7 +106,7 @@ pub const Logger = struct {
 
         // Send to all handlers
         for (self.handlers.items) |handler| {
-            handler.writeLog(level, message, metadata) catch |err| {
+            handler.writeLog(level, formatted_message, metadata) catch |err| {
                 std.debug.print("Handler error: {}\n", .{err});
             };
         }

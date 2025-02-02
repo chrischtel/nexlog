@@ -1,4 +1,3 @@
-// src/nexlog.zig
 const std = @import("std");
 
 pub const core = struct {
@@ -45,6 +44,10 @@ pub const isInitialized = core.init.isInitialized;
 pub const getDefaultLogger = core.init.getDefaultLogger;
 pub const LogBuilder = core.init.LogBuilder;
 
+// Re-export formatter types and functions
+pub const FormatConfig = utils.format.FormatConfig;
+pub const Formatter = utils.format.Formatter;
+
 // Re-export pattern analysis types and functions
 // pub const PatternType = core.types.PatternType;
 // pub const PatternVariable = core.types.PatternVariable;
@@ -82,4 +85,29 @@ test "basic log test" {
     defer log.deinit();
 
     try log.log(.err, "Test message", .{}, null);
+}
+
+// Test for formatter functionality
+test "formatter functionality test" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    const format_config = FormatConfig{
+        .template = "[{timestamp}] [{level}] {message}",
+        .timestamp_format = .unix,
+        .level_format = .upper,
+        .use_color = false,
+    };
+
+    const cfg = LogConfig{
+        .min_level = .debug,
+        .enable_colors = false,
+        .enable_file_logging = false,
+        .format_config = format_config,
+    };
+
+    var log = try Logger.init(allocator, cfg);
+    defer log.deinit();
+
+    try log.log(.info, "Formatted test message", .{}, null);
 }
