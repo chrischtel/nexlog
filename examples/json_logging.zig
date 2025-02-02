@@ -13,7 +13,7 @@ pub fn main() !void {
     try std.fs.cwd().makePath(log_dir);
 
     // Get the current working directory
-    var cwd_buf: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
     const cwd = std.fs.cwd().realpath(".", &cwd_buf) catch unreachable;
 
     // Construct the absolute path for the log file within the log_dir
