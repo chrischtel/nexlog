@@ -35,8 +35,8 @@ pub const LogHandler = struct {
         const Ptr = @TypeOf(pointer);
         const ptr_info = @typeInfo(Ptr);
 
-        std.debug.assert(ptr_info == .Pointer); // Must be a pointer
-        std.debug.assert(ptr_info.Pointer.size == .One); // Must be a single-item pointer
+        std.debug.assert(ptr_info == .pointer); // Must be a pointer
+        std.debug.assert(ptr_info.pointer.size == .one); // Must be a single-item pointer
 
         const GenericWriteLog = struct {
             fn implementation(
