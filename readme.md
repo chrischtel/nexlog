@@ -1,5 +1,7 @@
 # Nexlog
 
+> 02.02.2025: Added support for Zig version `0.14.0-dev.3026+c225b780e`
+
 A modern, high-performance logging library for Zig featuring colorized output, file rotation, and comprehensive metadata tracking.
 
 [![Zig](https://img.shields.io/badge/Zig-0.13.0-orange.svg)](https://ziglang.org/)
@@ -25,7 +27,7 @@ A modern, high-performance logging library for Zig featuring colorized output, f
 1.
 Add Nexlog as a dependency in your `build.zig.zon`:
 
-`zig fetch --save git+https://github.com/chrischtel/nexlog/`
+`zig fetch --save git+https://github.com/chrischtel/nexlog#v0.2.0.rc-2`
 
 ```zig
 
