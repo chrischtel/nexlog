@@ -13,17 +13,18 @@ pub const JsonHandlerConfig = struct {
 
 pub const JsonHandler = struct {
     const Self = @This();
-
     allocator: std.mem.Allocator,
     config: JsonHandlerConfig,
     file: ?std.fs.File,
     has_written: bool,
-    is_initialized: bool, // Add this to track initialization state
+    is_initialized: bool,
 
     pub fn init(allocator: std.mem.Allocator, config: JsonHandlerConfig) errors.Error!*Self {
+        // Allocate the handler first
         var handler = try allocator.create(Self);
         errdefer allocator.destroy(handler);
 
+        // Initialize with safe defaults
         handler.* = .{
             .allocator = allocator,
             .config = config,
@@ -32,13 +33,22 @@ pub const JsonHandler = struct {
             .is_initialized = false,
         };
 
+        // Handle file creation separately
         if (config.output_file) |path| {
-            const file = try std.fs.createFileAbsolute(path, .{
+            handler.file = std.fs.createFileAbsolute(path, .{
                 .read = true,
                 .truncate = true,
-            });
-            try file.writeAll("[\n");
-            handler.file = file;
+            }) catch |err| {
+                allocator.destroy(handler);
+                return err;
+            };
+
+            // Write initial bracket
+            handler.file.?.writeAll("[\n") catch |err| {
+                handler.file.?.close();
+                allocator.destroy(handler);
+                return err;
+            };
         }
 
         handler.is_initialized = true;
@@ -46,24 +56,34 @@ pub const JsonHandler = struct {
     }
 
     pub fn deinit(self: *Self) void {
+        // Guard against double-free
         if (!self.is_initialized) return;
 
+        // Create local copies of needed values
+        const was_written = self.has_written;
+        const allocator = self.allocator;
+
+        // Mark as not initialized first
         self.is_initialized = false;
 
+        // Handle file cleanup
         if (self.file) |file| {
-            if (self.has_written) {
+            // Write closing content
+            if (was_written) {
                 file.writeAll("\n]") catch {};
             } else {
                 file.writeAll("[]") catch {};
             }
-            // Store the allocator before we potentially invalidate self
-            const allocator = self.allocator;
-            self.file = null;
-            allocator.destroy(self);
-        } else {
-            const allocator = self.allocator;
-            allocator.destroy(self);
+
+            // Close the file
+            file.close();
         }
+
+        // Clear all fields before destruction
+        self.* = undefined;
+
+        // Finally destroy the handler
+        allocator.destroy(self);
     }
 
     pub fn log(
@@ -73,6 +93,8 @@ pub const JsonHandler = struct {
         metadata: ?types.LogMetadata,
     ) errors.Error!void {
         if (!self.is_initialized) return error.NotInitialized;
+
+        // Early return for filtered levels
         if (@intFromEnum(level) < @intFromEnum(self.config.min_level)) {
             return;
         }
@@ -86,6 +108,7 @@ pub const JsonHandler = struct {
         defer self.allocator.free(json_str);
 
         if (self.file) |*file| {
+            // Add comma if not first entry
             if (self.has_written) {
                 try file.writeAll(",\n");
             }
