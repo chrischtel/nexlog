@@ -29,7 +29,7 @@ const OrderProcessor = struct {
         const metadata = self.createMetadata();
 
         // Log the start of order processing
-        try self.logger.log(.debug, "Starting order processing [dept={s}, order_id={d}]", .{ self.department, order_id }, metadata);
+        self.logger.debug("Starting order processing [dept={s}, order_id={d}]", .{ self.department, order_id }, metadata);
 
         // Simulate processing steps with appropriate logging
         try self.validateOrder(order_id);
@@ -99,14 +99,14 @@ pub fn main() !void {
     };
 
     // Log application startup
-    try logger.log(.info, "Application starting", .{}, base_metadata);
+    logger.info("Application starting", .{}, base_metadata);
 
     // Simulate some logging activity
-    try logger.log(.debug, "Initializing subsystems", .{}, base_metadata);
-    try logger.log(.info, "Processing started", .{}, base_metadata);
-    try logger.log(.warn, "Resource usage high", .{}, base_metadata);
+    logger.debug("Initializing subsystems", .{}, base_metadata);
+    logger.info("Processing started", .{}, base_metadata);
+    logger.warn("Resource usage high", .{}, base_metadata);
 
     // Ensure all logs are written before shutdown
     try logger.flush();
-    try logger.log(.info, "Application shutdown complete", .{}, base_metadata);
+    logger.info("Application shutdown complete", .{}, base_metadata);
 }
