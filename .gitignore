@@ -5,3 +5,4 @@ zig-out/
 logs/
 *test_*
 test*
+test_logs/*.json
