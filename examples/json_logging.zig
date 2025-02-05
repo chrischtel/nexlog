@@ -26,7 +26,6 @@ pub fn main() !void {
         .pretty_print = true, // Optional: Makes the JSON output more readable
         .output_file = log_file_path,
     });
-    defer json_handler.deinit();
 
     // Create a logger
     const logger = try nexlog.Logger.init(allocator, .{});
