@@ -1,43 +1,58 @@
-# Nexlog
+# nexlog
 
-A modern, high-performance logging library for Zig featuring colorized output, file rotation, and comprehensive metadata tracking.
+**nexlog** is a high-performance, flexible, and feature-rich logging library for Zig applications. Designed with both power and ease-of-use in mind, nexlog offers asynchronous logging, file rotation, structured logging, and much more — making it a perfect fit for projects of any size.
 
-[![Zig](https://img.shields.io/badge/Zig-0.13.0-orange.svg)](https://ziglang.org/)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+---
 
-> Development will mainly happen on the `develop` branch. There is not much documentation. You can look into the `tests/` folder and the `examples/` folder.
+## Table of Contents
+
+- [Features](#features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Advanced Configuration](#advanced-configuration)
+- [Custom Handlers](#custom-handlers)
+- [JSON Logging](#json-logging)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
 
 ## Features
 
-- 🔒 **Thread-safe** by design
-- 🎨 **Colorized output** for better readability
-- 📁 **File logging** with automatic rotation
-- 🔍 **Rich metadata** tracking (timestamp, thread ID, file, line, function)
-- ⚡ **High performance** with minimal allocations
-- 🛠️ **Builder pattern** for easy configuration
-- 🎯 **Multiple log levels** (trace, debug, info, warn, err, critical)
+- **Multiple Log Levels**: Supports debug, info, warning, and error levels.
+- **Asynchronous Logging**: High-performance async mode minimizes the impact on application performance.
+- **File Rotation**: Automatically rotates log files based on configurable file sizes and backup counts.
+- **Customizable Handlers**: Comes with built-in handlers for console, file, and JSON outputs; also supports custom handlers.
+- **Rich Metadata**: Automatically includes timestamps, thread IDs, file names, and function names.
+- **Structured Logging**: Provides JSON output for machine-readable logs.
+- **Color Support**: Terminal color coding for different log levels enhances readability.
+- **Configurable Buffer Size**: Adjustable buffer size for optimal performance.
+- **Context-Based Logging**: Supports department- or component-specific logging contexts.
 
-## Quick Start
-## Please note that the only examples currently available and up-to-date are in the `examples/` folder.
+---
 
 ## Installation
 
-1.
-Add Nexlog as a dependency in your `build.zig.zon`:
+Add **nexlog** as a dependency in your `build.zig.zon` file.
 
-`zig fetch --save git+https://github.com/chrischtel/nexlog/`
+### Fetching from GitHub
+
+```bash
+zig fetch --save git+https://github.com/chrischtel/nexlog/
+```
+
+In your `build.zig.zon`:
 
 ```zig
-
 .{
     .name = "my-project",
     .version = "0.1.0",
     .dependencies = .{
         .nexlog = .{
             // 🚧 Nexlog: Actively Developing
-            // Expect rapid feature growth and frequent changes
-            // Recommended: Use develop branch for latest improvements
-            // "git+https://github.com/chrischtel/nexlog#develop"
+            // Expect rapid feature growth and frequent changes.
+            // To fetch the develop branch, append `#develop` to the URL.
             .url = "git+https://github.com/chrischtel/nexlog/",
             .hash = "...",
         },
@@ -45,84 +60,137 @@ Add Nexlog as a dependency in your `build.zig.zon`:
 }
 ```
 
-2. Add to your `build.zig`:
-```zig
-    const nexlog = b.dependency("nexlog", .{
-        .target = target,
-        .optimize = optimize,
-    });
-
-    exe.root_module.addImport("nexlog", nexlog.module("nexlog"));
-```
-
-## Advanced Usage
-
-### Configuration Options
-
-```zig
-const config = nexlog.LogConfig{
-    .min_level = .info,
-    .enable_colors = true,
-    .enable_file_logging = true,
-    .file_path = "app.log",
-    .max_file_size = 10 * 1024 * 1024, // 10MB
-    .enable_rotation = true,
-    .max_rotated_files = 5,
-};
-```
-
-### Log Levels
-
-- `trace`: Finest-grained information
-- `debug`: Debugging information
-- `info`: General information
-- `warn`: Warning messages
-- `err`: Error messages
-- `critical`: Critical failures
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
-
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## Building from Source
-
-```bash
-git clone https://github.com/chrischtel/nexlog.git
-cd nexlog
-zig build
-```
-
-Run tests:
-```bash
-zig build test
-```
-
-Run examples:
-```bash
-zig build examples
-```
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- Thanks to the Zig community for their support and feedback
-- Inspired by great logging libraries across different languages
-
-## Contact
-
-Your Name - [@chrischtel](https://twitter.com/chrischtel)
-
-Project Link: [https://github.com/yourusername/nexlog](https://github.com/chrischtel/nexlog)
+> **Tip:** To fetch a specific release of **nexlog**, use:
+>
+> ```bash
+> zig fetch --save https://github.com/chrischtel/nexlog/archive/v0.4.0.tar.gz
+> ```
+>
+> Replace `v0.4.0` with your desired release version.
 
 ---
 
-<p align="center">Made with ❤️ in Zig</p>
+## Quick Start
+
+Below is a basic example to help you get started:
+
+```zig
+const std = @import("std");
+const nexlog = @import("nexlog");
+
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    // Initialize logger with basic configuration
+    var builder = nexlog.LogBuilder.init();
+    try builder
+        .setMinLevel(.debug)
+        .enableColors(true)
+        .enableFileLogging(true, "logs/app.log")
+        .build(allocator);
+    defer nexlog.deinit();
+
+    // Get the default logger
+    const logger = nexlog.getDefaultLogger() orelse return error.LoggerNotInitialized;
+
+    // Log some messages
+    logger.info("Application starting", .{}, null);
+    logger.debug("Debug information", .{}, null);
+    logger.warn("Warning message", .{}, null);
+    logger.err("Error occurred", .{}, null);
+}
+```
+
+---
+
+## Advanced Configuration
+
+nexlog's builder pattern makes advanced configuration straightforward:
+
+```zig
+try builder
+    .setMinLevel(.debug)
+    .enableColors(true)
+    .setBufferSize(8192)
+    .enableFileLogging(true, "logs/app.log")
+    .setMaxFileSize(5 * 1024 * 1024)  // 5MB
+    .setMaxRotatedFiles(3)
+    .enableRotation(true)
+    .enableAsyncMode(true)
+    .enableMetadata(true)
+    .build(allocator);
+```
+
+This configuration sets up a logger with:
+
+- A minimum log level of debug.
+- Color support enabled.
+- Custom buffer size.
+- File logging with rotation parameters.
+- Asynchronous logging and metadata inclusion.
+
+---
+
+## Custom Handlers
+
+Need specialized logging? Create your own log handler. Here's a simple scaffold:
+
+```zig
+const CustomHandler = struct {
+    // Implement custom handling logic here.
+};
+```
+
+For more details, see the [Custom Handlers Documentation](#).
+
+---
+
+## JSON Logging
+
+For structured, machine-readable logs, nexlog provides built-in JSON support:
+
+```zig
+var json_handler = try JsonHandler.init(allocator, .{
+    .min_level = .debug,
+    .pretty_print = true,
+    .output_file = "logs/app.json",
+});
+```
+
+This configuration writes prettified JSON logs to `logs/app.json`, starting at the debug level.
+
+---
+
+## Documentation
+
+For more detailed information, check out the following resources:
+
+- [Configuration Guide](#)
+- [Handler Documentation](#)
+- [Advanced Usage Examples](#)
+- [API Reference](#)
+
+---
+
+## Contributing
+
+Contributions are welcome! If you'd like to contribute:
+
+1. Fork the repository.
+2. Create a new branch for your feature or bug fix.
+3. Commit your changes.
+4. Open a Pull Request.
+
+For major changes, please open an issue first to discuss what you would like to change.
+
+---
+
+## License
+
+_Add your license information here._
+
+---
+
+Happy logging with **nexlog**!
