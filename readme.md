@@ -189,8 +189,7 @@ For major changes, please open an issue first to discuss what you would like to 
 
 ## License
 
-_Add your license information here._
-
+This project is licensed under the BSD 3-Clause License. See the [LICENSE](./LICENSE) file for more details.
 ---
 
 Happy logging with **nexlog**!
