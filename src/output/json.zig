@@ -48,6 +48,8 @@ pub const JsonHandler = struct {
     pub fn deinit(self: *Self) void {
         if (!self.is_initialized) return;
 
+        self.is_initialized = false;
+
         if (self.file) |file| {
             if (self.has_written) {
                 file.writeAll("\n]") catch {};
@@ -57,11 +59,9 @@ pub const JsonHandler = struct {
             // Store the allocator before we potentially invalidate self
             const allocator = self.allocator;
             self.file = null;
-            self.is_initialized = false;
             allocator.destroy(self);
         } else {
             const allocator = self.allocator;
-            self.is_initialized = false;
             allocator.destroy(self);
         }
     }
