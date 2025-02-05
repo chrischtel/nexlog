@@ -34,9 +34,13 @@ pub const LogHandler = struct {
     ) LogHandler {
         const Ptr = @TypeOf(pointer);
         const ptr_info = @typeInfo(Ptr);
-
-        std.debug.assert(ptr_info == .pointer); // Must be a pointer
-        std.debug.assert(ptr_info.pointer.size == .one); // Must be a single-item pointer
+        if (@hasField(std.builtin.Type, "pointer")) {
+            std.debug.assert(ptr_info == .pointer); // Must be a pointer
+            std.debug.assert(ptr_info.pointer.size == .one); // Must be a single-item pointer
+        } else {
+            std.debug.assert(ptr_info == .Pointer); // Must be a pointer
+            std.debug.assert(ptr_info.Pointer.size == .One); // Must be a single-item pointer        }
+        }
 
         const GenericWriteLog = struct {
             fn implementation(
@@ -72,7 +76,6 @@ pub const LogHandler = struct {
         };
     }
 
-    /// Write a log message using this handler
     pub fn writeLog(
         self: LogHandler,
         level: types.LogLevel,
