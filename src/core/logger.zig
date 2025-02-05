@@ -106,10 +106,39 @@ pub const Logger = struct {
 
         // Send to all handlers
         for (self.handlers.items) |handler| {
-            handler.writeLog(level, message, metadata) catch |err| {
-                std.debug.print("Handler error: {}\n", .{err});
+            handler.writeLog(level, message, metadata) catch |log_error| {
+                std.debug.print("Handler error: {}\n", .{log_error});
             };
         }
+    }
+    // === Convenience (Infallible) Methods ===
+
+    /// Logs an info-level message without the caller having to use `try` or `catch`.
+    pub fn info(self: *Self, comptime fmt: []const u8, args: anytype, metadata: ?types.LogMetadata) void {
+        _ = self.log(.info, fmt, args, metadata) catch |log_error| {
+            std.debug.print("Logger.info error: {}\n", .{log_error});
+        };
+    }
+
+    /// Logs a debug-level message.
+    pub fn debug(self: *Self, comptime fmt: []const u8, args: anytype, metadata: ?types.LogMetadata) void {
+        _ = self.log(.debug, fmt, args, metadata) catch |log_error| {
+            std.debug.print("Logger.debug error: {}\n", .{log_error});
+        };
+    }
+
+    /// Logs a warning-level message.
+    pub fn warn(self: *Self, comptime fmt: []const u8, args: anytype, metadata: ?types.LogMetadata) void {
+        _ = self.log(.warn, fmt, args, metadata) catch |log_error| {
+            std.debug.print("Logger.warn error: {}\n", .{log_error});
+        };
+    }
+
+    /// Logs an error-level message.
+    pub fn err(self: *Self, comptime fmt: []const u8, args: anytype, metadata: ?types.LogMetadata) void {
+        _ = self.log(.err, fmt, args, metadata) catch |log_error| {
+            std.debug.print("Logger.error error: {}\n", .{log_error});
+        };
     }
 
     // Add a new handler
@@ -139,8 +168,8 @@ pub const Logger = struct {
         defer self.mutex.unlock();
 
         for (self.handlers.items) |handler| {
-            handler.flush() catch |err| {
-                std.debug.print("Flush error: {}\n", .{err});
+            handler.flush() catch |flush_err| {
+                std.debug.print("Flush error: {}\n", .{flush_err});
             };
         }
     }
