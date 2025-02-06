@@ -58,51 +58,41 @@ pub fn build(b: *std.Build) void {
     }
 
     // build.zig section for examples
-
-    // Create an examples step
-    const run_examples = b.step("examples", "Run all examples");
-
-    // Add examples from examples directory
-    var examples_dir = std.fs.cwd().openDir("examples", .{ .iterate = true }) catch |err| {
-        if (err == error.FileNotFound) return;
-        unreachable;
+    const examples = [_]struct {
+        file: []const u8,
+        name: []const u8,
+        libc: bool = false,
+    }{
+        .{ .file = "examples/basic_usage.zig", .name = "example_1" },
+        .{ .file = "examples/custom_handler.zig", .name = "example_2" },
+        .{ .file = "examples/file_rotation.zig", .name = "example_3" },
+        .{ .file = "examples/json_logging.zig", .name = "example_4" },
     };
 
-    var examples_it = examples_dir.iterate();
-    while (examples_it.next() catch unreachable) |entry| {
-        if (entry.kind == .file) {
-            const extension = std.fs.path.extension(entry.name);
-            if (std.mem.eql(u8, extension, ".zig")) {
-                // Check if file has content
-                const example_file = examples_dir.openFile(entry.name, .{}) catch continue;
-                defer example_file.close();
-
-                const file_size = example_file.getEndPos() catch continue;
-                if (file_size == 0) continue; // Skip empty files
-
-                const example_path = b.fmt("examples/{s}", .{entry.name});
-                const example_name = std.fs.path.stem(entry.name);
-
-                // Create executable for this example
-                const example_exe = b.addExecutable(.{
-                    .name = example_name,
-                    .root_source_file = b.path(example_path),
-                    .target = target,
-                    .optimize = optimize,
-                });
-                example_exe.root_module.addImport("nexlog", nexlog_module);
-
-                // Install the example binary
-                b.installArtifact(example_exe);
-
-                // Create run step for this example
-                const run_cmd = b.addRunArtifact(example_exe);
-                const run_step = b.step(b.fmt("run-{s}", .{example_name}), b.fmt("Run the {s} example", .{example_name}));
-                run_step.dependOn(&run_cmd.step);
-
-                // Add to main examples step
-                run_examples.dependOn(&run_cmd.step);
+    {
+        for (examples) |example| {
+            const exe = b.addExecutable(.{
+                .name = example.name,
+                .target = target,
+                .optimize = optimize,
+                .root_source_file = b.path(example.file),
+            });
+            exe.root_module.addImport("nexlog", nexlog_module);
+            if (example.libc) {
+                exe.linkLibC();
             }
+            b.installArtifact(exe);
+
+            const run_cmd = b.addRunArtifact(exe);
+            run_cmd.step.dependOn(b.getInstallStep());
+            if (b.args) |args| {
+                run_cmd.addArgs(args);
+            }
+
+            const run_step = b.step(example.name, example.file);
+            run_step.dependOn(&run_cmd.step);
+
+            test_step.dependOn(&run_cmd.step);
         }
     }
 }
