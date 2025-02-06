@@ -55,4 +55,4 @@ jobs:
 
     - name: Run examples
       if: success()
-      run: zig build examples
+      run: zig build all-examples
