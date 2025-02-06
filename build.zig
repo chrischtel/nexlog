@@ -69,6 +69,8 @@ pub fn build(b: *std.Build) void {
         .{ .file = "examples/json_logging.zig", .name = "example_4" },
     };
 
+    const all_examples_step = b.step("all-examples", "Run all examples (for CI)");
+
     {
         for (examples) |example| {
             const exe = b.addExecutable(.{
@@ -93,6 +95,7 @@ pub fn build(b: *std.Build) void {
             run_step.dependOn(&run_cmd.step);
 
             test_step.dependOn(&run_cmd.step);
+            all_examples_step.dependOn(&run_cmd.step);
         }
     }
 }
