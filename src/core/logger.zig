@@ -118,6 +118,8 @@ pub const Logger = struct {
         _ = self.log(.info, fmt, args, metadata) catch |log_error| {
             std.debug.print("Logger.info error: {}\n", .{log_error});
         };
+
+        try self.flush();
     }
 
     /// Logs a debug-level message.
@@ -125,6 +127,7 @@ pub const Logger = struct {
         _ = self.log(.debug, fmt, args, metadata) catch |log_error| {
             std.debug.print("Logger.debug error: {}\n", .{log_error});
         };
+        try self.flush();
     }
 
     /// Logs a warning-level message.
@@ -132,6 +135,7 @@ pub const Logger = struct {
         _ = self.log(.warn, fmt, args, metadata) catch |log_error| {
             std.debug.print("Logger.warn error: {}\n", .{log_error});
         };
+        try self.flush();
     }
 
     /// Logs an error-level message.
@@ -139,6 +143,7 @@ pub const Logger = struct {
         _ = self.log(.err, fmt, args, metadata) catch |log_error| {
             std.debug.print("Logger.error error: {}\n", .{log_error});
         };
+        try self.flush();
     }
 
     // Add a new handler
