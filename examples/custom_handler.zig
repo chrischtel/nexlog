@@ -64,6 +64,17 @@ pub const CustomHandler = struct {
         try self.messages.append(formatted);
     }
 
+    // Add writeFormattedLog method to handle pre-formatted logs
+    pub fn writeFormattedLog(
+        self: *Self,
+        formatted_message: []const u8,
+    ) !void {
+        // For the custom handler, we just store the already-formatted message
+        // Make a copy since we'll own this memory
+        const message_copy = try self.allocator.dupe(u8, formatted_message);
+        try self.messages.append(message_copy);
+    }
+
     pub fn flush(self: *Self) !void {
         // Example: Print all stored messages
         for (self.messages.items) |msg| {
@@ -89,6 +100,7 @@ pub const CustomHandler = struct {
         return handlers.LogHandler.init(
             self,
             CustomHandler.log,
+            CustomHandler.writeFormattedLog,
             CustomHandler.flush,
             CustomHandler.deinit,
         );

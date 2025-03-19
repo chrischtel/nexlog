@@ -6,8 +6,12 @@ pub const ConsoleConfig = struct {
     enable_colors: bool = true,
     min_level: types.LogLevel = .debug,
     use_stderr: bool = true,
-    buffer_size: usize = 4096, // Default buffer size of 4KB
+    buffer_size: usize = 4096,
 
+    // Add these options for metadata display
+    show_source_location: bool = true,
+    show_function: bool = false,
+    show_thread_id: bool = false,
 };
 
 pub const ConsoleHandler = struct {
@@ -44,18 +48,42 @@ pub const ConsoleHandler = struct {
         else
             std.io.getStdOut().writer();
 
-        // Write timestamp
+        // Display more metadata information according to configuration
+        if (self.config.enable_colors) {
+            try writer.print("{s}", .{level.toColor()});
+        }
+
+        // Display standard timestamp & level info
         const timestamp = if (metadata) |m| m.timestamp else std.time.timestamp();
         try writer.print("[{d}] ", .{timestamp});
 
-        // Write log level with colors if enabled
+        // Print level
         if (self.config.enable_colors) {
-            try writer.print("{s}[{s}]\x1b[0m ", .{ level.toColor(), level.toString() });
+            try writer.print("[{s}]", .{level.toString()});
+            try writer.print("\x1b[0m ", .{}); // Reset color
         } else {
             try writer.print("[{s}] ", .{level.toString()});
         }
 
-        // Write message
+        // Include file and line information if available
+        if (metadata != null and self.config.show_source_location) {
+            const file = metadata.?.file;
+            // Get just the filename without the path
+            const filename = std.fs.path.basename(file);
+            try writer.print("[{s}:{d}] ", .{ filename, metadata.?.line });
+        }
+
+        // Include function name if available
+        if (metadata != null and self.config.show_function) {
+            try writer.print("[{s}] ", .{metadata.?.function});
+        }
+
+        // Include thread ID if available
+        if (metadata != null and self.config.show_thread_id) {
+            try writer.print("[tid:{d}] ", .{metadata.?.thread_id});
+        }
+
+        // Write the actual message
         try writer.print("{s}\n", .{message});
     }
 
@@ -69,8 +97,20 @@ pub const ConsoleHandler = struct {
         return handlers.LogHandler.init(
             self,
             ConsoleHandler.log,
+            ConsoleHandler.writeFormattedLog,
             ConsoleHandler.flush,
             ConsoleHandler.deinit,
         );
+    }
+
+    pub fn writeFormattedLog(self: *Self, formatted_message: []const u8) !void {
+        // No level check needed here since the message is already formatted
+        const writer = if (self.config.use_stderr)
+            std.io.getStdErr().writer()
+        else
+            std.io.getStdOut().writer();
+
+        // Just write the already formatted message
+        try writer.print("{s}\n", .{formatted_message});
     }
 };

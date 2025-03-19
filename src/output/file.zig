@@ -109,6 +109,33 @@ pub const FileHandler = struct {
         }
     }
 
+    // Add this new method for formatted logs
+    pub fn writeFormattedLog(self: *Self, formatted_message: []const u8) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        // Write to buffer directly
+        const bytes_written = try self.circular_buffer.write(formatted_message);
+
+        // Add newline if not present
+        if (formatted_message.len > 0 and formatted_message[formatted_message.len - 1] != '\n') {
+            _ = try self.circular_buffer.write("\n");
+            _ = self.current_size.fetchAdd(bytes_written + 1, .monotonic);
+        } else {
+            _ = self.current_size.fetchAdd(bytes_written, .monotonic);
+        }
+
+        // Check rotation before writing
+        if (self.config.enable_rotation and self.current_size.load(.monotonic) >= self.config.max_size) {
+            try self.rotate();
+        }
+
+        // Check if we need to flush
+        if (self.shouldFlush()) {
+            try self.flush();
+        }
+    }
+
     pub fn flush(self: *Self) !void {
         if (self.file) |file| {
             var temp_buffer: [4096]u8 = undefined;
@@ -200,13 +227,15 @@ pub const FileHandler = struct {
             self.current_size.store(0, .release);
         }
     }
-    // Interface conversion method
+
+    // Interface conversion method - fixed to use the new handler interface
     pub fn toLogHandler(self: *Self) handlers.LogHandler {
         return handlers.LogHandler.init(
             self,
-            writeLog,
-            flush,
-            deinit,
+            FileHandler.writeLog,
+            FileHandler.writeFormattedLog,
+            FileHandler.flush,
+            FileHandler.deinit,
         );
     }
 };
