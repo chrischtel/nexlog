@@ -16,7 +16,7 @@ pub fn main() !void {
         .setMinLevel(.debug)
         .enableColors(true)
         .setBufferSize(4096)
-    // Set small max file size to see rotation in action
+        // Set small max file size to see rotation in action
         .enableFileLogging(true, "logs/test.log")
         .setMaxFileSize(1024) // 1KB - small size to trigger rotations quickly
         .setMaxRotatedFiles(3) // Keep 3 backup files
