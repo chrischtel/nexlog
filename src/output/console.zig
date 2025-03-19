@@ -8,7 +8,6 @@ pub const ConsoleConfig = struct {
     use_stderr: bool = true,
     buffer_size: usize = 4096,
 
-    // Add these options for metadata display
     show_source_location: bool = true,
     show_function: bool = false,
     show_thread_id: bool = false,

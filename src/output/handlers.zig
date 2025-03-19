@@ -89,7 +89,7 @@ pub const LogHandler = struct {
 
         return .{
             .writeLogFn = GenericWriteLog,
-            .writeFormattedLogFn = GenericWriteFormattedLog, // Fixed: Added this missing field
+            .writeFormattedLogFn = GenericWriteFormattedLog,
             .flushFn = GenericFlush,
             .deinitFn = GenericDeinit,
             .ctx = pointer,
