@@ -119,7 +119,6 @@ pub const JsonHandler = struct {
         }
     }
 
-    // Add writeFormattedLog method for pre-formatted messages
     pub fn writeFormattedLog(
         self: *Self,
         formatted_message: []const u8,

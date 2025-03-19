@@ -109,7 +109,6 @@ pub const FileHandler = struct {
         }
     }
 
-    // Add this new method for formatted logs
     pub fn writeFormattedLog(self: *Self, formatted_message: []const u8) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
