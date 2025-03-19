@@ -119,6 +119,45 @@ pub const JsonHandler = struct {
         }
     }
 
+    // Add writeFormattedLog method for pre-formatted messages
+    pub fn writeFormattedLog(
+        self: *Self,
+        formatted_message: []const u8,
+    ) errors.Error!void {
+        if (!self.is_initialized) return error.NotInitialized;
+
+        // For the JSON handler, we handle formatted messages by writing them directly
+        // But we need to ensure the JSON structure is maintained
+
+        if (self.file) |*file| {
+            // Add comma if not first entry
+            if (self.has_written) {
+                try file.writeAll(",\n");
+            }
+
+            // Since we don't know the structure of the formatted message,
+            // we'll wrap it in a simplified JSON object
+            const buf = try self.allocator.alloc(u8, formatted_message.len + 40);
+            defer self.allocator.free(buf);
+
+            const json_wrapper = std.fmt.bufPrint(
+                buf,
+                "{{ \"message\": {s} }}",
+                .{std.fmt.fmtSliceEscapeUpper(formatted_message)},
+            ) catch |err| {
+                // Fallback to direct writing if formatting fails
+                try file.writeAll(formatted_message);
+                self.has_written = true;
+                return err;
+            };
+
+            try file.writeAll(json_wrapper);
+            self.has_written = true;
+        } else {
+            try std.io.getStdOut().writer().print("{s}\n", .{formatted_message});
+        }
+    }
+
     pub fn flush(self: *Self) errors.Error!void {
         if (!self.is_initialized) return error.NotInitialized;
         if (self.file) |*file| {
@@ -130,6 +169,7 @@ pub const JsonHandler = struct {
         return handlers.LogHandler.init(
             self,
             JsonHandler.log,
+            JsonHandler.writeFormattedLog,
             JsonHandler.flush,
             JsonHandler.deinit,
         );

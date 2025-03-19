@@ -18,7 +18,7 @@ const OrderProcessor = struct {
         _ = self; // Tell Zig we're intentionally not using self for now
         return .{
             .timestamp = std.time.timestamp(),
-            .thread_id = 0, // In a real app, get actual thread ID
+            .thread_id = std.Thread.getCurrentId(), // In a real app, get actual thread ID
             .file = @src().file,
             .line = @src().line,
             .function = @src().fn_name,

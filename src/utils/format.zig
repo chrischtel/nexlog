@@ -341,7 +341,11 @@ pub const Formatter = struct {
 
 /// Helper function to create a formatter with default configuration
 pub fn createDefaultFormatter(allocator: std.mem.Allocator) !*Formatter {
-    return Formatter.init(allocator, .{});
+    return Formatter.init(allocator, .{
+        .template = "[{timestamp}] [{color}{level}{reset}] [{file}:{line}] {message}",
+        .timestamp_format = .unix,
+        .use_color = true,
+    });
 }
 
 /// Example custom placeholder handler

@@ -20,18 +20,20 @@ pub const Logger = struct {
     pub fn init(allocator: std.mem.Allocator, config: cfg.LogConfig) !*Self {
         var logger = try allocator.create(Self);
 
+        const formatter = if (config.format_config) |fmt_config|
+            try format.Formatter.init(allocator, fmt_config)
+        else
+            try format.createDefaultFormatter(allocator);
+
         // Initialize base logger
         logger.* = .{
             .allocator = allocator,
-            .config = config, // Store the passed config
+            .config = config,
             .mutex = std.Thread.Mutex{},
             .handlers = std.ArrayList(handlers.LogHandler).init(allocator),
-            .formatter = null,
+            .formatter = formatter,
         };
 
-        if (config.format_config) |fmt_config| {
-            logger.formatter = try format.Formatter.init(allocator, fmt_config);
-        }
         // Initialize console handler by default
         if (config.enable_console) {
             const console_config = console.ConsoleConfig{
@@ -74,6 +76,7 @@ pub const Logger = struct {
         self.allocator.destroy(self);
     }
 
+    // In logger.zig - use null-safe access for formatter
     pub fn log(
         self: *Self,
         level: types.LogLevel,
@@ -88,7 +91,7 @@ pub const Logger = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        // Format message once for all handlers
+        // Format message
         var temp_buffer: [4096]u8 = undefined;
         var fba = std.heap.FixedBufferAllocator.init(&temp_buffer);
         const message = try std.fmt.allocPrint(
@@ -97,20 +100,27 @@ pub const Logger = struct {
             args,
         );
 
-        const formatted_message = if (self.formatter) |formatter| blk: {
-            const result = try formatter.format(level, message, metadata);
-            break :blk result;
-        } else message;
+        // Use if statement to safely access formatter
+        if (self.formatter) |formatter| {
+            const formatted_message = try formatter.format(level, message, metadata);
+            defer self.allocator.free(formatted_message);
 
-        defer if (self.formatter != null) self.allocator.free(formatted_message);
-
-        // Send to all handlers
-        for (self.handlers.items) |handler| {
-            handler.writeLog(level, message, metadata) catch |log_error| {
-                std.debug.print("Handler error: {}\n", .{log_error});
-            };
+            // Send to all handlers - pass the already formatted message
+            for (self.handlers.items) |handler| {
+                handler.writeFormattedLog(formatted_message) catch |log_error| {
+                    std.debug.print("Handler error: {}\n", .{log_error});
+                };
+            }
+        } else {
+            // Fallback if formatter is null
+            for (self.handlers.items) |handler| {
+                handler.writeLog(level, message, metadata) catch |log_error| {
+                    std.debug.print("Handler error: {}\n", .{log_error});
+                };
+            }
         }
     }
+
     // === Convenience (Infallible) Methods ===
 
     /// Logs an info-level message without the caller having to use `try` or `catch`.

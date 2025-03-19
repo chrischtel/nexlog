@@ -11,6 +11,11 @@ pub const LogHandler = struct {
         metadata: ?types.LogMetadata,
     ) anyerror!void,
 
+    writeFormattedLogFn: *const fn (
+        ctx: *anyopaque,
+        formatted_message: []const u8,
+    ) anyerror!void,
+
     /// Pointer to implementation of flush
     flushFn: *const fn (ctx: *anyopaque) anyerror!void,
 
@@ -28,6 +33,10 @@ pub const LogHandler = struct {
             level: types.LogLevel,
             message: []const u8,
             metadata: ?types.LogMetadata,
+        ) anyerror!void,
+        comptime writeFormattedLogFnT: fn (
+            ptr: @TypeOf(pointer),
+            formatted_message: []const u8,
         ) anyerror!void,
         comptime flushFnT: fn (ptr: @TypeOf(pointer)) anyerror!void,
         comptime deinitFnT: fn (ptr: @TypeOf(pointer)) void,
@@ -54,6 +63,16 @@ pub const LogHandler = struct {
             }
         }.implementation;
 
+        const GenericWriteFormattedLog = struct {
+            fn implementation(
+                ctx: *anyopaque,
+                formatted_message: []const u8,
+            ) !void {
+                const self = @as(Ptr, @alignCast(@ptrCast(ctx)));
+                return writeFormattedLogFnT(self, formatted_message);
+            }
+        }.implementation;
+
         const GenericFlush = struct {
             fn implementation(ctx: *anyopaque) !void {
                 const self = @as(Ptr, @alignCast(@ptrCast(ctx)));
@@ -70,6 +89,7 @@ pub const LogHandler = struct {
 
         return .{
             .writeLogFn = GenericWriteLog,
+            .writeFormattedLogFn = GenericWriteFormattedLog, // Fixed: Added this missing field
             .flushFn = GenericFlush,
             .deinitFn = GenericDeinit,
             .ctx = pointer,
@@ -83,6 +103,10 @@ pub const LogHandler = struct {
         metadata: ?types.LogMetadata,
     ) !void {
         return self.writeLogFn(self.ctx, level, message, metadata);
+    }
+
+    pub fn writeFormattedLog(self: LogHandler, formatted_message: []const u8) !void {
+        return self.writeFormattedLogFn(self.ctx, formatted_message);
     }
 
     /// Flush any buffered output
