@@ -78,10 +78,9 @@ pub const CircularBuffer = struct {
             now - self.last_compaction >= @divFloor(self.compaction_interval_ms, 1000))
         {
             // Do compaction while holding the current lock
-            try self.compactInternal(); // Renamed to indicate internal usage
+            try self.compactInternal();
         }
 
-        // Existing write logic...
         var bytes_written: usize = 0;
         for (data) |byte| {
             if (self.full) {
