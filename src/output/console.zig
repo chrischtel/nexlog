@@ -95,6 +95,7 @@ pub const ConsoleHandler = struct {
     pub fn toLogHandler(self: *Self) handlers.LogHandler {
         return handlers.LogHandler.init(
             self,
+            .console,
             ConsoleHandler.log,
             ConsoleHandler.writeFormattedLog,
             ConsoleHandler.flush,

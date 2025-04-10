@@ -3,6 +3,7 @@ const types = @import("../core/types.zig");
 const errors = @import("../core/errors.zig");
 const buffer = @import("../utils/buffer.zig");
 const expect = std.testing.expect;
+const handlers = @import("handlers.zig");
 
 pub const NetworkEndpoint = struct {
     host: []const u8,
@@ -56,6 +57,18 @@ pub const NetworkHandler = struct {
         }
         self.circular_buffer.deinit();
         self.allocator.destroy(self);
+    }
+
+    /// Convert to generic LogHandler interface
+    pub fn toLogHandler(self: *Self) handlers.LogHandler {
+        return handlers.LogHandler.init(
+            self,
+            .network,
+            NetworkHandler.log,
+            NetworkHandler.writeFormattedLog,
+            NetworkHandler.flush,
+            NetworkHandler.deinit,
+        );
     }
 
     pub fn write(self: *Self, level: types.LogLevel, message: []const u8, metadata: ?types.LogMetadata) !void {
