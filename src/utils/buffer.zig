@@ -12,6 +12,33 @@ pub const CircularBuffer = struct {
     write_pos: usize,
     full: bool,
     mutex: std.Thread.Mutex,
+    compaction_threshold: usize = 0.75,
+    last_compaction: usize = 0,
+    compaction_interval_ms: u32 = 5000,
+
+    pub fn compact(self: *Self) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        if (self.isEmpty()) return;
+
+        var temp_buffer = try self.allocator.alloc(u8, self.buffer.len);
+        defer self.allocator.free(temp_buffer);
+
+        var bytes_copied: usize = 0;
+        while (bytes_copied < self.len()) {
+            temp_buffer[bytes_copied] = self.buffer[self.read_pos];
+            self.read_pos = (self.read_pos + 1) % self.buffer.len;
+            bytes_copied += 1;
+        }
+
+        self.read_pos = 0;
+        self.write_pos = bytes_copied;
+        self.full = false;
+
+        @memcpy(self.buffer[0..bytes_copied], temp_buffer[0..bytes_copied]);
+        self.last_compaction = std.time.timestamp();
+    }
 
     /// Initialize a new circular buffer with the specified size
     pub fn init(allocator: std.mem.Allocator, size: usize) !*Self {
@@ -54,7 +81,22 @@ pub const CircularBuffer = struct {
             self.full = self.write_pos == self.read_pos;
         }
 
+        const now = std.time.timestamp();
+        const fragmentation: f64 = @floatFromInt(self.getFragmentedSpace() / self.buffer.len);
+
+        if (fragmentation > self.compaction_threshold and now - self.last_compaction > self.compaction_interval_ms) {
+            try self.compact();
+        }
         return bytes_written;
+    }
+
+    // Helper to calculate fragmented space
+    fn getFragmentedSpace(self: *Self) usize {
+        if (self.isEmpty()) return 0;
+        if (self.write_pos > self.read_pos) {
+            return self.buffer.len - (self.write_pos - self.read_pos);
+        }
+        return self.read_pos - self.write_pos;
     }
 
     /// Read data from the buffer
