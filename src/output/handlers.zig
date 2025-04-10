@@ -1,8 +1,19 @@
 const std = @import("std");
 const types = @import("../core/types.zig");
 
+/// Handler types for identification
+pub const HandlerType = enum {
+    console,
+    file,
+    network,
+    custom,
+};
+
 /// Interface that all log handlers must implement
 pub const LogHandler = struct {
+    /// Type of the handler
+    handler_type: HandlerType,
+
     /// Pointer to implementation of writeLog
     writeLogFn: *const fn (
         ctx: *anyopaque,
@@ -28,6 +39,7 @@ pub const LogHandler = struct {
     /// Create a LogHandler interface from a specific handler type
     pub fn init(
         pointer: anytype,
+        handler_type: HandlerType,
         comptime writeLogFnT: fn (
             ptr: @TypeOf(pointer),
             level: types.LogLevel,
@@ -88,6 +100,7 @@ pub const LogHandler = struct {
         }.implementation;
 
         return .{
+            .handler_type = handler_type,
             .writeLogFn = GenericWriteLog,
             .writeFormattedLogFn = GenericWriteFormattedLog,
             .flushFn = GenericFlush,

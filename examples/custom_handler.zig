@@ -99,6 +99,7 @@ pub const CustomHandler = struct {
     pub fn toLogHandler(self: *Self) handlers.LogHandler {
         return handlers.LogHandler.init(
             self,
+            .custom,
             CustomHandler.log,
             CustomHandler.writeFormattedLog,
             CustomHandler.flush,

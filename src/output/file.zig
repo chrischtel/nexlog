@@ -231,6 +231,7 @@ pub const FileHandler = struct {
     pub fn toLogHandler(self: *Self) handlers.LogHandler {
         return handlers.LogHandler.init(
             self,
+            .file,
             FileHandler.writeLog,
             FileHandler.writeFormattedLog,
             FileHandler.flush,

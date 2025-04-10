@@ -15,15 +15,36 @@ pub const Logger = struct {
     config: cfg.LogConfig,
     mutex: std.Thread.Mutex,
     handlers: std.ArrayList(handlers.LogHandler),
-    formatter: ?*format.Formatter, // Add formatter
+    console_formatter: ?*format.Formatter,
+    file_formatter: ?*format.Formatter,
 
     pub fn init(allocator: std.mem.Allocator, config: cfg.LogConfig) !*Self {
         var logger = try allocator.create(Self);
 
-        const formatter = if (config.format_config) |fmt_config|
-            try format.Formatter.init(allocator, fmt_config)
-        else
-            try format.createDefaultFormatter(allocator);
+        // Create console formatter with colors enabled
+        var console_formatter: ?*format.Formatter = null;
+        if (config.format_config) |fmt_config| {
+            var console_fmt_config = fmt_config;
+            console_fmt_config.use_color = config.enable_colors;
+            console_formatter = try format.Formatter.init(allocator, console_fmt_config);
+        } else {
+            console_formatter = try format.createDefaultFormatter(allocator);
+        }
+
+        // Create file formatter with colors disabled
+        var file_formatter: ?*format.Formatter = null;
+        if (config.format_config) |fmt_config| {
+            var file_fmt_config = fmt_config;
+            file_fmt_config.use_color = false;
+            file_formatter = try format.Formatter.init(allocator, file_fmt_config);
+        } else {
+            const file_fmt_config = format.FormatConfig{
+                .template = "[{timestamp}] [{level}] {message}",
+                .timestamp_format = .unix,
+                .use_color = false,
+            };
+            file_formatter = try format.Formatter.init(allocator, file_fmt_config);
+        }
 
         // Initialize base logger
         logger.* = .{
@@ -31,7 +52,8 @@ pub const Logger = struct {
             .config = config,
             .mutex = std.Thread.Mutex{},
             .handlers = std.ArrayList(handlers.LogHandler).init(allocator),
-            .formatter = formatter,
+            .console_formatter = console_formatter,
+            .file_formatter = file_formatter,
         };
 
         // Initialize console handler by default
@@ -65,7 +87,10 @@ pub const Logger = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        if (self.formatter) |fmt| {
+        if (self.console_formatter) |fmt| {
+            fmt.deinit();
+        }
+        if (self.file_formatter) |fmt| {
             fmt.deinit();
         }
         // Deinit all handlers
@@ -76,7 +101,6 @@ pub const Logger = struct {
         self.allocator.destroy(self);
     }
 
-    // In logger.zig - use null-safe access for formatter
     pub fn log(
         self: *Self,
         level: types.LogLevel,
@@ -100,24 +124,28 @@ pub const Logger = struct {
             args,
         );
 
-        // Use if statement to safely access formatter
-        if (self.formatter) |formatter| {
-            const formatted_message = try formatter.format(level, message, metadata);
-            defer self.allocator.free(formatted_message);
+        // Format with appropriate formatter based on handler type
+        for (self.handlers.items) |handler| {
+            const formatted_message = if (handler.handler_type == .console) blk: {
+                if (self.console_formatter) |formatter| {
+                    break :blk try formatter.format(level, message, metadata);
+                } else {
+                    break :blk message;
+                }
+            } else blk: {
+                if (self.file_formatter) |formatter| {
+                    break :blk try formatter.format(level, message, metadata);
+                } else {
+                    break :blk message;
+                }
+            };
+            defer if (formatted_message.ptr != message.ptr) {
+                self.allocator.free(formatted_message);
+            };
 
-            // Send to all handlers - pass the already formatted message
-            for (self.handlers.items) |handler| {
-                handler.writeFormattedLog(formatted_message) catch |log_error| {
-                    std.debug.print("Handler error: {}\n", .{log_error});
-                };
-            }
-        } else {
-            // Fallback if formatter is null
-            for (self.handlers.items) |handler| {
-                handler.writeLog(level, message, metadata) catch |log_error| {
-                    std.debug.print("Handler error: {}\n", .{log_error});
-                };
-            }
+            handler.writeFormattedLog(formatted_message) catch |log_error| {
+                std.debug.print("Handler error: {}\n", .{log_error});
+            };
         }
     }
 
@@ -128,8 +156,9 @@ pub const Logger = struct {
         _ = self.log(.info, fmt, args, metadata) catch |log_error| {
             std.debug.print("Logger.info error: {}\n", .{log_error});
         };
-
-        try self.flush();
+        _ = self.flush() catch |flush_error| {
+            std.debug.print("Logger.info flush error: {}\n", .{flush_error});
+        };
     }
 
     /// Logs a debug-level message.
@@ -137,7 +166,9 @@ pub const Logger = struct {
         _ = self.log(.debug, fmt, args, metadata) catch |log_error| {
             std.debug.print("Logger.debug error: {}\n", .{log_error});
         };
-        try self.flush();
+        _ = self.flush() catch |flush_error| {
+            std.debug.print("Logger.debug flush error: {}\n", .{flush_error});
+        };
     }
 
     /// Logs a warning-level message.
@@ -145,7 +176,9 @@ pub const Logger = struct {
         _ = self.log(.warn, fmt, args, metadata) catch |log_error| {
             std.debug.print("Logger.warn error: {}\n", .{log_error});
         };
-        try self.flush();
+        _ = self.flush() catch |flush_error| {
+            std.debug.print("Logger.warn flush error: {}\n", .{flush_error});
+        };
     }
 
     /// Logs an error-level message.
@@ -153,7 +186,9 @@ pub const Logger = struct {
         _ = self.log(.err, fmt, args, metadata) catch |log_error| {
             std.debug.print("Logger.error error: {}\n", .{log_error});
         };
-        try self.flush();
+        _ = self.flush() catch |flush_error| {
+            std.debug.print("Logger.error flush error: {}\n", .{flush_error});
+        };
     }
 
     // Add a new handler
