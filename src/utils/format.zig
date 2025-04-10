@@ -86,6 +86,17 @@ pub const FormatConfig = struct {
 
     /// Custom placeholder handlers
     custom_handlers: ?std.StringHashMap(CustomPlaceholderFn) = null,
+
+    structured_format: enum {
+        json, // Output as JSON
+        logfmt, // Key=value format
+        custom, // Custom format
+    } = .json,
+
+    include_timestamp_in_structured: bool = true,
+    include_level_in_structured: bool = true,
+    custom_field_separator: ?[]const u8 = null,
+    custom_key_value_separator: ?[]const u8 = null,
 };
 
 /// Function type for custom placeholder handlers
