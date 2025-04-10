@@ -1,4 +1,4 @@
-### v0.5.0-beta.1 (April 10, 2024)
+### v0.5.0-beta.1 (April 10, 2025)
 - Added structured logging support
   - New `StructuredField` and `FieldValue` types for type-safe structured data
   - Enhanced `FormatConfig` to support structured logging formats
