@@ -12,9 +12,9 @@ pub const CircularBuffer = struct {
     write_pos: usize,
     full: bool,
     mutex: std.Thread.Mutex,
-    compaction_threshold: usize = 0.75,
-    last_compaction: usize = 0,
-    compaction_interval_ms: u32 = 5000,
+    compaction_threshold_percent: usize = 75,
+    last_compaction: i64 = 0,
+    compaction_interval_ms: i64 = 5000,
 
     pub fn compact(self: *Self) !void {
         self.mutex.lock();
@@ -69,6 +69,19 @@ pub const CircularBuffer = struct {
             return BufferError.BufferOverflow;
         }
 
+        // Check if compaction is needed before writing
+        const fragmented_space = self.getFragmentedSpace();
+        const fragmentation_percent = (fragmented_space * 100) / self.buffer.len;
+        const now = std.time.timestamp();
+
+        if (fragmentation_percent > self.compaction_threshold_percent and
+            now - self.last_compaction >= @divFloor(self.compaction_interval_ms, 1000))
+        {
+            // Do compaction while holding the current lock
+            try self.compactInternal(); // Renamed to indicate internal usage
+        }
+
+        // Existing write logic...
         var bytes_written: usize = 0;
         for (data) |byte| {
             if (self.full) {
@@ -81,13 +94,49 @@ pub const CircularBuffer = struct {
             self.full = self.write_pos == self.read_pos;
         }
 
-        const now = std.time.timestamp();
-        const fragmentation: f64 = @floatFromInt(self.getFragmentedSpace() / self.buffer.len);
-
-        if (fragmentation > self.compaction_threshold and now - self.last_compaction > self.compaction_interval_ms) {
-            try self.compact();
-        }
         return bytes_written;
+    }
+
+    fn compactInternal(self: *Self) !void {
+        if (self.isEmpty()) return;
+
+        var temp_buffer = try self.allocator.alloc(u8, self.buffer.len);
+        defer self.allocator.free(temp_buffer);
+
+        // Copy valid data to temporary buffer
+        var bytes_copied: usize = 0;
+        while (!self.isEmpty()) {
+            const remaining = temp_buffer.len - bytes_copied;
+            const bytes_read = try self.readInternal(temp_buffer[bytes_copied..remaining]);
+            if (bytes_read == 0) break;
+            bytes_copied += bytes_read;
+        }
+
+        // Reset buffer state
+        self.read_pos = 0;
+        self.write_pos = bytes_copied;
+        self.full = bytes_copied == self.buffer.len;
+
+        // Copy back to main buffer
+        @memcpy(self.buffer[0..bytes_copied], temp_buffer[0..bytes_copied]);
+        self.last_compaction = std.time.timestamp();
+    }
+
+    // Internal read function that assumes the lock is already held
+    fn readInternal(self: *Self, dest: []u8) !usize {
+        if (self.isEmpty()) {
+            return BufferError.BufferUnderflow;
+        }
+
+        var bytes_read: usize = 0;
+        while (bytes_read < dest.len and !self.isEmpty()) {
+            dest[bytes_read] = self.buffer[self.read_pos];
+            bytes_read += 1;
+            self.read_pos = (self.read_pos + 1) % self.buffer.len;
+            self.full = false;
+        }
+
+        return bytes_read;
     }
 
     // Helper to calculate fragmented space
