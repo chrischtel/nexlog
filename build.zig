@@ -67,6 +67,8 @@ pub fn build(b: *std.Build) void {
         .{ .file = "examples/custom_handler.zig", .name = "example_2" },
         .{ .file = "examples/file_rotation.zig", .name = "example_3" },
         .{ .file = "examples/json_logging.zig", .name = "example_4" },
+        .{ .file = "examples/logger_integration.zig", .name = "example_5" },
+        .{ .file = "examples/structured_logging.zig", .name = "example_6" },
     };
 
     const all_examples_step = b.step("all-examples", "Run all examples (for CI)");
