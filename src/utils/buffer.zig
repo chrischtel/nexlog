@@ -20,6 +20,12 @@ pub const CircularBuffer = struct {
     total_bytes_written: std.atomic.Value(usize),
     total_compactions: std.atomic.Value(usize),
 
+    overflow_attempts: std.atomic.Value(usize),
+    underflow_attempts: std.atomic.Value(usize),
+    peak_usage: std.atomic.Value(usize),
+    total_operations: std.atomic.Value(usize),
+    last_operation_timestamp: std.atomic.Value(i64),
+
     pub fn compact(self: *Self) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -335,4 +341,9 @@ pub const BufferStats = struct {
     total_bytes_written: usize,
     total_compactions: usize,
     fragmentation_percent: usize,
+    overflow_attempts: usize,
+    underflow_attempts: usize,
+    average_usage_percent: f32,
+    peak_usage: usize,
+    last_operation_timestamp: i64,
 };
