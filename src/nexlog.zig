@@ -45,6 +45,9 @@ pub const Pool = utils.pool.Pool;
 pub const JsonValue = utils.json.JsonValue;
 pub const JsonError = utils.json.JsonError;
 
+pub const BufferHealth = utils.buffer.BufferHealth;
+pub const BufferStats = utils.buffer.BufferStats;
+
 // Example test
 test "basic log test" {
     const testing = std.testing;
