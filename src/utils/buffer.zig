@@ -372,3 +372,67 @@ pub const BufferStats = struct {
     peak_usage: usize,
     last_operation_timestamp: i64,
 };
+
+pub const BufferHealth = struct {
+    status: enum {
+        healthy,
+        warning,
+        critical,
+    },
+    issues: std.ArrayList([]const u8),
+    usage_percent: f32,
+    time_since_last_op_ms: i64,
+};
+
+pub fn getBufferHealth(self: *Self, allocator: std.mem.Allocator) !BufferHealth {
+    var health = BufferHealth{
+        .status = .healthy,
+        .issues = std.ArrayList([]const u8).init(allocator),
+        .usage_percent = @as(f32, @floatFromInt(self.len())) / @as(f32, @floatFromInt(self.capacity())) * 100.0,
+        .time_since_last_op_ms = (std.time.timestamp() - self.last_operation_timestamp.load(.monotonic)) * 1000,
+    };
+
+    // Check usage thresholds
+    if (health.usage_percent > 90) {
+        health.status = .warning;
+        try health.issues.append("Buffer usage above 90%");
+    }
+    if (health.usage_percent > 95) {
+        health.status = .critical;
+        try health.issues.append("Buffer usage above 95%");
+    }
+
+    // Check overflow/underflow rates
+    const total_ops = self.total_operations.load(.monotonic);
+    if (total_ops > 0) {
+        const overflow_rate = @as(f32, @floatFromInt(self.overflow_attempts.load(.monotonic))) / @as(f32, @floatFromInt(total_ops));
+        const underflow_rate = @as(f32, @floatFromInt(self.underflow_attempts.load(.monotonic))) / @as(f32, @floatFromInt(total_ops));
+
+        if (overflow_rate > 0.05) {
+            health.status = .warning;
+            try health.issues.append("High overflow attempt rate (>5%)");
+        }
+        if (underflow_rate > 0.05) {
+            health.status = .warning;
+            try health.issues.append("High underflow attempt rate (>5%)");
+        }
+    }
+
+    // Check inactivity
+    if (health.time_since_last_op_ms > 30_000) { // 30 seconds
+        try health.issues.append("Buffer inactive for >30 seconds");
+    }
+
+    // Check fragmentation
+    const frag_percent = self.getFragmentationPercent();
+    if (frag_percent > 50) {
+        health.status = .warning;
+        try health.issues.append("High fragmentation (>50%)");
+    }
+
+    return health;
+}
+
+pub fn deinitBufferHealth(health: *BufferHealth) void {
+    health.issues.deinit();
+}
