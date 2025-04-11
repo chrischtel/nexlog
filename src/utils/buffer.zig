@@ -12,9 +12,13 @@ pub const CircularBuffer = struct {
     write_pos: usize,
     full: bool,
     mutex: std.Thread.Mutex,
+
     compaction_threshold_percent: usize = 75,
     last_compaction: i64 = 0,
     compaction_interval_ms: i64 = 5000,
+
+    total_bytes_written: std.atomic.Value(usize),
+    total_compactions: std.atomic.Value(usize),
 
     pub fn compact(self: *Self) !void {
         self.mutex.lock();
@@ -22,22 +26,39 @@ pub const CircularBuffer = struct {
 
         if (self.isEmpty()) return;
 
-        var temp_buffer = try self.allocator.alloc(u8, self.buffer.len);
+        const current_size = self.len();
+        if (current_size == 0) return;
+
+        // If data is contiguous, no need for temporary buffer
+        if (self.read_pos < self.write_pos) return;
+
+        // Only allocate temporary buffer if data wraps around
+        var temp_buffer = try self.allocator.alloc(u8, current_size);
         defer self.allocator.free(temp_buffer);
 
         var bytes_copied: usize = 0;
-        while (bytes_copied < self.len()) {
-            temp_buffer[bytes_copied] = self.buffer[self.read_pos];
-            self.read_pos = (self.read_pos + 1) % self.buffer.len;
-            bytes_copied += 1;
+
+        // Copy first segment (from read_pos to end)
+        const first_segment = self.buffer[self.read_pos..];
+        @memcpy(temp_buffer[0..first_segment.len], first_segment);
+        bytes_copied += first_segment.len;
+
+        // Copy second segment (from start to write_pos)
+        if (self.write_pos > 0) {
+            const second_segment = self.buffer[0..self.write_pos];
+            @memcpy(temp_buffer[bytes_copied..], second_segment);
+            bytes_copied += second_segment.len;
         }
+
+        // Copy back to main buffer
+        @memcpy(self.buffer[0..bytes_copied], temp_buffer[0..bytes_copied]);
 
         self.read_pos = 0;
         self.write_pos = bytes_copied;
         self.full = false;
 
-        @memcpy(self.buffer[0..bytes_copied], temp_buffer[0..bytes_copied]);
         self.last_compaction = std.time.timestamp();
+        _ = self.total_compactions.fetchAdd(1, .monotonic);
     }
 
     /// Initialize a new circular buffer with the specified size
@@ -50,6 +71,8 @@ pub const CircularBuffer = struct {
             .write_pos = 0,
             .full = false,
             .mutex = std.Thread.Mutex{},
+            .total_bytes_written = std.atomic.Value(usize).init(0),
+            .total_compactions = std.atomic.Value(usize).init(0),
         };
         return self;
     }
@@ -60,40 +83,65 @@ pub const CircularBuffer = struct {
         self.allocator.destroy(self);
     }
 
+    fn getFragmentationPercent(self: *Self) usize {
+        const fragmented_space = self.getFragmentedSpace();
+        return (fragmented_space * 100) / self.buffer.len;
+    }
+
     /// Write data to the buffer
     pub fn write(self: *Self, data: []const u8) !usize {
         self.mutex.lock();
         defer self.mutex.unlock();
 
+        // Quick capacity check
         if (data.len > self.capacity()) {
             return BufferError.BufferOverflow;
         }
 
-        // Check if compaction is needed before writing
-        const fragmented_space = self.getFragmentedSpace();
-        const fragmentation_percent = (fragmented_space * 100) / self.buffer.len;
-        const now = std.time.timestamp();
+        // Check available space and perform compaction if needed
+        const available_space = self.availableSpace();
+        if (available_space < data.len) {
+            // Try compaction first
+            if (self.getFragmentationPercent() > self.compaction_threshold_percent) {
+                try self.compact();
+            }
 
-        if (fragmentation_percent > self.compaction_threshold_percent and
-            now - self.last_compaction >= @divFloor(self.compaction_interval_ms, 1000))
-        {
-            // Do compaction while holding the current lock
-            try self.compactInternal();
+            // If still not enough space after compaction
+            if (self.availableSpace() < data.len) {
+                return BufferError.BufferFull;
+            }
         }
 
         var bytes_written: usize = 0;
-        for (data) |byte| {
-            if (self.full) {
-                return bytes_written;
-            }
 
-            self.buffer[self.write_pos] = byte;
-            bytes_written += 1;
-            self.write_pos = (self.write_pos + 1) % self.buffer.len;
-            self.full = self.write_pos == self.read_pos;
+        // Optimize for contiguous writes when possible
+        if (self.write_pos + data.len <= self.buffer.len) {
+            // Single copy for contiguous space
+            @memcpy(self.buffer[self.write_pos..][0..data.len], data);
+            bytes_written = data.len;
+            self.write_pos = (self.write_pos + data.len) % self.buffer.len;
+        } else {
+            // Split copy for wrapped writes
+            const first_chunk_size = self.buffer.len - self.write_pos;
+            @memcpy(self.buffer[self.write_pos..], data[0..first_chunk_size]);
+            @memcpy(self.buffer[0..], data[first_chunk_size..]);
+            bytes_written = data.len;
+            self.write_pos = data.len - first_chunk_size;
         }
 
+        self.full = self.write_pos == self.read_pos;
+        _ = self.total_bytes_written.fetchAdd(bytes_written, .monotonic);
         return bytes_written;
+    }
+
+    pub fn getStats(self: *Self) BufferStats {
+        return .{
+            .capacity = self.buffer.len,
+            .used_space = self.len(),
+            .total_bytes_written = self.total_bytes_written.load(.Acquire),
+            .total_compactions = self.total_compactions.load(.Acquire),
+            .fragmentation_percent = self.getFragmentationPercent(),
+        };
     }
 
     fn compactInternal(self: *Self) !void {
@@ -138,13 +186,20 @@ pub const CircularBuffer = struct {
         return bytes_read;
     }
 
-    // Helper to calculate fragmented space
-    fn getFragmentedSpace(self: *Self) usize {
-        if (self.isEmpty()) return 0;
-        if (self.write_pos > self.read_pos) {
+    fn availableSpace(self: *Self) usize {
+        if (self.full) return 0;
+        if (self.write_pos >= self.read_pos) {
             return self.buffer.len - (self.write_pos - self.read_pos);
         }
         return self.read_pos - self.write_pos;
+    }
+
+    fn getFragmentedSpace(self: *Self) usize {
+        if (self.full or self.isEmpty()) return 0;
+        if (self.write_pos < self.read_pos) {
+            return self.read_pos - self.write_pos;
+        }
+        return self.buffer.len - (self.write_pos - self.read_pos);
     }
 
     /// Read data from the buffer
@@ -269,4 +324,12 @@ pub const BufferPool = struct {
         // In debug builds, we could assert or log this condition
         unreachable;
     }
+};
+
+pub const BufferStats = struct {
+    capacity: usize,
+    used_space: usize,
+    total_bytes_written: usize,
+    total_compactions: usize,
+    fragmentation_percent: usize,
 };
