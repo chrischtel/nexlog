@@ -11,6 +11,8 @@ pub fn Pool(comptime T: type) type {
         const PoolItem = struct {
             data: T,
             in_use: bool,
+            last_used: i64,
+            use_count: usize,
         };
 
         allocator: std.mem.Allocator,
@@ -19,6 +21,15 @@ pub fn Pool(comptime T: type) type {
         destroy_fn: *const fn (item: *T) void,
         mutex: std.Thread.Mutex,
         stats: PoolStats,
+
+        config: PoolConfig,
+
+        pub const PoolConfig = struct {
+            initial_size: usize,
+            max_size: usize,
+            growth_factor: f32 = 1.5,
+            shrink_threshold: f32 = 0.5,
+            item_timeout_ms: i64 = 60_000,
 
         pub const PoolStats = struct {
             total_items: usize,
