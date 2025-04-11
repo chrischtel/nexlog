@@ -79,6 +79,11 @@ pub const CircularBuffer = struct {
             .mutex = std.Thread.Mutex{},
             .total_bytes_written = std.atomic.Value(usize).init(0),
             .total_compactions = std.atomic.Value(usize).init(0),
+            .overflow_attempts = std.atomic.Value(usize).init(0),
+            .underflow_attempts = std.atomic.Value(usize).init(0),
+            .peak_usage = std.atomic.Value(usize).init(0),
+            .total_operations = std.atomic.Value(usize).init(0),
+            .last_operation_timestamp = std.atomic.Value(i64).init(std.time.timestamp()),
         };
         return self;
     }
