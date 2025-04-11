@@ -152,15 +152,9 @@ pub const CircularBuffer = struct {
         _ = self.total_bytes_written.fetchAdd(bytes_written, .monotonic);
 
         const current_usage = self.len();
-        var current_peak = self.peak_usage.load(.monotonic);
-        while (current_usage > current_peak) {
-            _ = self.peak_usage.compareAndSwap(
-                current_peak,
-                current_usage,
-                .monotonic,
-                .monotonic,
-            ) orelse break;
-            current_peak = self.peak_usage.load(.monotonic);
+        const old_peak = self.peak_usage.swap(current_usage, .monotonic);
+        if (current_usage < old_peak) {
+            _ = self.peak_usage.swap(old_peak, .monotonic);
         }
         return bytes_written;
     }
