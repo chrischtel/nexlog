@@ -138,8 +138,8 @@ pub const CircularBuffer = struct {
         return .{
             .capacity = self.buffer.len,
             .used_space = self.len(),
-            .total_bytes_written = self.total_bytes_written.load(.Acquire),
-            .total_compactions = self.total_compactions.load(.Acquire),
+            .total_bytes_written = self.total_bytes_written.load(.acquire),
+            .total_compactions = self.total_compactions.load(.acquire),
             .fragmentation_percent = self.getFragmentationPercent(),
         };
     }
