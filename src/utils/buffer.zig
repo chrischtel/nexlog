@@ -104,14 +104,18 @@ pub const CircularBuffer = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        // Quick capacity check
+        _ = self.total_operations.fetchAdd(1, .monotonic);
+        _ = self.last_operation_timestamp.store(std.time.timestamp(), .monotonic);
+
         if (data.len > self.capacity()) {
+            _ = self.overflow_attempts.fetchAdd(1, .monotonic);
             return BufferError.BufferOverflow;
         }
 
-        // Check available space and perform compaction if needed
         const available_space = self.availableSpace();
         if (available_space < data.len) {
+            _ = self.overflow_attempts.fetchAdd(1, .monotonic);
+
             // Try compaction first
             if (self.getFragmentationPercent() > self.compaction_threshold_percent) {
                 try self.compact();
@@ -146,6 +150,18 @@ pub const CircularBuffer = struct {
 
         self.full = self.write_pos == self.read_pos;
         _ = self.total_bytes_written.fetchAdd(bytes_written, .monotonic);
+
+        const current_usage = self.len();
+        var current_peak = self.peak_usage.load(.monotonic);
+        while (current_usage > current_peak) {
+            _ = self.peak_usage.compareAndSwap(
+                current_peak,
+                current_usage,
+                .monotonic,
+                .monotonic,
+            ) orelse break;
+            current_peak = self.peak_usage.load(.monotonic);
+        }
         return bytes_written;
     }
 
@@ -221,7 +237,11 @@ pub const CircularBuffer = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
+        _ = self.total_operations.fetchAdd(1, .monotonic);
+        _ = self.last_operation_timestamp.store(std.time.timestamp(), .monotonic);
+
         if (self.isEmpty()) {
+            _ = self.underflow_attempts.fetchAdd(1, .monotonic);
             return BufferError.BufferUnderflow;
         }
 
