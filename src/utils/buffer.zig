@@ -384,7 +384,33 @@ pub const BufferHealth = struct {
     time_since_last_op_ms: i64,
 };
 
-pub fn getBufferHealth(self: *Self, allocator: std.mem.Allocator) !BufferHealth {
+pub fn isHealthy(self: *CircularBuffer) bool {
+    const current_usage = @as(f32, @floatFromInt(self.len())) / @as(f32, @floatFromInt(self.capacity())) * 100.0;
+    const total_ops = self.total_operations.load(.monotonic);
+
+    // Quick health check without allocation
+    if (current_usage > 95) return false;
+    if (total_ops > 0) {
+        const overflow_rate = @as(f32, @floatFromInt(self.overflow_attempts.load(.monotonic))) / @as(f32, @floatFromInt(total_ops));
+        const underflow_rate = @as(f32, @floatFromInt(self.underflow_attempts.load(.monotonic))) / @as(f32, @floatFromInt(total_ops));
+        if (overflow_rate > 0.10 or underflow_rate > 0.10) return false;
+    }
+
+    const time_since_last_op = std.time.timestamp() - self.last_operation_timestamp.load(.monotonic);
+    if (time_since_last_op > 60) return false; // 1 minute inactivity threshold
+
+    return true;
+}
+
+pub fn resetHealthMetrics(self: *CircularBuffer) void {
+    _ = self.overflow_attempts.store(0, .monotonic);
+    _ = self.underflow_attempts.store(0, .monotonic);
+    _ = self.total_operations.store(0, .monotonic);
+    _ = self.peak_usage.store(0, .monotonic);
+    _ = self.last_operation_timestamp.store(std.time.timestamp(), .monotonic);
+}
+
+pub fn getBufferHealth(self: *CircularBuffer, allocator: std.mem.Allocator) !BufferHealth {
     var health = BufferHealth{
         .status = .healthy,
         .issues = std.ArrayList([]const u8).init(allocator),
