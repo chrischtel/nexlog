@@ -169,7 +169,6 @@ pub const CircularBuffer = struct {
         self.last_compaction = std.time.timestamp();
     }
 
-    // Internal read function that assumes the lock is already held
     fn readInternal(self: *Self, dest: []u8) !usize {
         if (self.isEmpty()) {
             return BufferError.BufferUnderflow;
