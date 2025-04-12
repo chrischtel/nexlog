@@ -62,8 +62,6 @@ pub const RotationMode = enum {
 pub const CompressionType = enum {
     none,
     gzip,
-    zlib,
-    zstd,
 };
 
 pub const FileConfig = struct {
@@ -79,10 +77,10 @@ pub const FileConfig = struct {
     flush_interval_ms: u32 = 1000,
     min_level: types.LogLevel = .debug,
 
+    // New rotation options
     rotation_mode: RotationMode = .size,
     rotation_interval: u64 = 24 * 60 * 60, // Default: 24 hours in seconds
     compression: CompressionType = .none,
-    rotation_pattern: []const u8 = "{path}.{timestamp}.{index}", // Supports: {path}, {timestamp}, {index}
     last_rotation: i64 = 0, // Timestamp of last rotation
 };
 
@@ -165,10 +163,12 @@ pub const FileHandler = struct {
         // Write to buffer
         const bytes_written = try self.circular_buffer.write(formatted);
         const new_size = self.current_size.fetchAdd(bytes_written, .monotonic);
-        _ = new_size; // autofix
 
-        // Check rotation
-        if (self.shouldRotate()) {
+        // Check if file size exceeds max_size
+        if (new_size + bytes_written >= self.config.max_size) {
+            // Prioritize size-based rotation check
+            try self.rotate();
+        } else if (self.shouldRotate()) {
             try self.rotate();
         }
 
@@ -193,7 +193,7 @@ pub const FileHandler = struct {
             _ = self.current_size.fetchAdd(bytes_written, .monotonic);
         }
 
-        // Check rotation before writing
+        // Check rotation
         if (self.shouldRotate()) {
             try self.rotate();
         }
@@ -239,27 +239,16 @@ pub const FileHandler = struct {
             now - self.last_flush >= self.config.flush_interval_ms / 1000;
     }
 
-    fn compressFile(self: *Self, source_path: []const u8, dest_path: []const u8) FileRotationError!void {
-        switch (self.config.compression) {
-            .none => return,
-            .gzip => {
-                var source_file = try std.fs.cwd().openFile(source_path, .{});
-                defer source_file.close();
+    fn compressFile(self: *Self, source_path: []const u8, dest_path: []const u8) !void {
+        if (self.config.compression == .none) return;
 
-                var dest_file = try std.fs.cwd().createFile(dest_path, .{});
-                defer dest_file.close();
+        var source_file = try std.fs.cwd().openFile(source_path, .{});
+        defer source_file.close();
 
-                try std.compress.gzip.compress(source_file.reader(), dest_file.writer(), .{});
-            },
-            .zlib => {
-                // TODO: Implement Zlib compression when available in std lib
-                return error.ZlibNotImplemented;
-            },
-            .zstd => {
-                // TODO: Implement ZSTD compression when available in std lib
-                return error.ZstdNotImplemented;
-            },
-        }
+        var dest_file = try std.fs.cwd().createFile(dest_path, .{});
+        defer dest_file.close();
+
+        try std.compress.gzip.compress(source_file.reader(), dest_file.writer(), .{});
     }
 
     fn shouldRotate(self: *Self) bool {
@@ -278,31 +267,34 @@ pub const FileHandler = struct {
 
     fn formatRotatedFileName(self: *Self, index: usize) ![]const u8 {
         const timestamp = std.time.timestamp();
-        var result = self.config.rotation_pattern;
+
+        // Start with a copy of the pattern
+        var result = try self.allocator.dupe(u8, self.config.rotation_pattern);
+        errdefer self.allocator.free(result);
 
         // Replace {path}
         if (std.mem.indexOf(u8, result, "{path}")) |_| {
-            const temp = try std.mem.replaceOwned(u8, self.allocator, result, "{path}", self.config.path);
-            if (!std.mem.eql(u8, result, self.config.rotation_pattern)) self.allocator.free(result);
-            result = temp;
+            const new_result = try std.mem.replaceOwned(u8, self.allocator, result, "{path}", self.config.path);
+            self.allocator.free(result);
+            result = new_result;
         }
 
         // Replace {timestamp}
         if (std.mem.indexOf(u8, result, "{timestamp}")) |_| {
             const timestamp_str = try std.fmt.allocPrint(self.allocator, "{d}", .{timestamp});
             defer self.allocator.free(timestamp_str);
-            const temp = try std.mem.replaceOwned(u8, self.allocator, result, "{timestamp}", timestamp_str);
-            if (!std.mem.eql(u8, result, self.config.rotation_pattern)) self.allocator.free(result);
-            result = temp;
+            const new_result = try std.mem.replaceOwned(u8, self.allocator, result, "{timestamp}", timestamp_str);
+            self.allocator.free(result);
+            result = new_result;
         }
 
         // Replace {index}
         if (std.mem.indexOf(u8, result, "{index}")) |_| {
             const index_str = try std.fmt.allocPrint(self.allocator, "{d}", .{index});
             defer self.allocator.free(index_str);
-            const temp = try std.mem.replaceOwned(u8, self.allocator, result, "{index}", index_str);
-            if (!std.mem.eql(u8, result, self.config.rotation_pattern)) self.allocator.free(result);
-            result = temp;
+            const new_result = try std.mem.replaceOwned(u8, self.allocator, result, "{index}", index_str);
+            self.allocator.free(result);
+            result = new_result;
         }
 
         return result;
@@ -312,58 +304,70 @@ pub const FileHandler = struct {
         if (self.file) |file| {
             const timestamp = std.time.timestamp();
 
-            // Flush any remaining data before rotation
+            // Flush and close current file
             try self.flush();
-
             file.close();
             self.file = null;
 
-            // Rotate existing files from highest to lowest index
+            // Shift existing rotated files
             var i: usize = self.config.max_rotated_files;
             while (i > 0) : (i -= 1) {
-                const old_name = try self.formatRotatedFileName(i - 1);
-                defer self.allocator.free(old_name);
+                const old_path = try std.fmt.allocPrint(
+                    self.allocator,
+                    "{s}.{d}",
+                    .{ self.config.path, i - 1 },
+                );
+                defer self.allocator.free(old_path);
 
-                // Skip if source file doesn't exist
-                if (std.fs.cwd().access(old_name, .{})) |_| {
-                    const new_name = try self.formatRotatedFileName(i);
-                    defer self.allocator.free(new_name);
-
-                    std.fs.cwd().rename(old_name, new_name) catch |err| {
-                        std.log.warn("Failed to rotate {s} to {s}: {}", .{ old_name, new_name, err });
-                        continue;
+                // Skip if this is the highest index
+                if (i == self.config.max_rotated_files) {
+                    // Delete the highest index file if it exists
+                    std.fs.cwd().deleteFile(old_path) catch |err| switch (err) {
+                        error.FileNotFound => {}, // Ignore if file doesn't exist
+                        else => {}, // Ignore other errors and continue
                     };
-
-                    // Compress only if successful rename
-                    if (self.config.compression != .none) {
-                        const compressed_path = try std.fmt.allocPrint(
-                            self.allocator,
-                            "{s}.gz",
-                            .{new_name},
-                        );
-                        defer self.allocator.free(compressed_path);
-
-                        self.compressFile(new_name, compressed_path) catch |err| {
-                            std.log.warn("Failed to compress {s}: {}", .{ new_name, err });
-                            continue;
-                        };
-
-                        std.fs.cwd().deleteFile(new_name) catch |err| {
-                            std.log.warn("Failed to delete original file after compression {s}: {}", .{ new_name, err });
-                        };
-                    }
-                } else |_| {
                     continue;
                 }
+
+                const new_path = try std.fmt.allocPrint(
+                    self.allocator,
+                    "{s}.{d}",
+                    .{ self.config.path, i },
+                );
+                defer self.allocator.free(new_path);
+
+                // Try to rename, ignore errors if file doesn't exist
+                std.fs.cwd().rename(old_path, new_path) catch |err| switch (err) {
+                    error.FileNotFound => {}, // Skip if the source doesn't exist
+                    else => {}, // Ignore other errors and continue
+                };
             }
 
-            // Rename current file to first rotated file
-            const first_rotated = try self.formatRotatedFileName(0);
-            defer self.allocator.free(first_rotated);
+            // Move current file to .1
+            const backup_path = try std.fmt.allocPrint(
+                self.allocator,
+                "{s}.1",
+                .{self.config.path},
+            );
+            defer self.allocator.free(backup_path);
 
-            std.fs.cwd().rename(self.config.path, first_rotated) catch |err| {
-                std.log.warn("Failed to rotate current file: {}", .{err});
+            std.fs.cwd().rename(self.config.path, backup_path) catch |err| switch (err) {
+                error.FileNotFound => {}, // Might happen if log file was deleted
+                else => {}, // Ignore other errors and continue
             };
+
+            // Compress the rotated file if needed
+            if (self.config.compression == .gzip) {
+                const compressed_path = try std.fmt.allocPrint(
+                    self.allocator,
+                    "{s}.gz",
+                    .{backup_path},
+                );
+                defer self.allocator.free(compressed_path);
+
+                self.compressFile(backup_path, compressed_path) catch {};
+                std.fs.cwd().deleteFile(backup_path) catch {};
+            }
 
             // Create new file
             self.file = try std.fs.cwd().createFile(self.config.path, .{});
