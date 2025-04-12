@@ -4,6 +4,18 @@ const errors = @import("../core/errors.zig");
 const buffer = @import("../utils/buffer.zig");
 const handlers = @import("handlers.zig");
 
+pub const RotationMode = enum {
+    size,
+    time,
+    both,
+};
+
+pub const CompressionType = enum {
+    none,
+    gzip,
+    zlib,
+};
+
 pub const FileConfig = struct {
     path: []const u8,
     mode: enum {
@@ -16,6 +28,12 @@ pub const FileConfig = struct {
     buffer_size: usize = 4096,
     flush_interval_ms: u32 = 1000,
     min_level: types.LogLevel = .debug,
+
+    rotation_mode: RotationMode = .size,
+    rotation_interval: u64 = 24 * 60 * 60, // Default: 24 hours in seconds
+    compression: CompressionType = .none,
+    rotation_pattern: []const u8 = "{path}.{timestamp}.{index}", // Supports: {path}, {timestamp}, {index}
+    last_rotation: i64 = 0, // Timestamp of last rotation
 };
 
 pub const FileHandler = struct {
@@ -168,6 +186,64 @@ pub const FileHandler = struct {
         const now = std.time.timestamp();
         return self.circular_buffer.len() > self.config.buffer_size / 2 or
             now - self.last_flush >= self.config.flush_interval_ms / 1000;
+    }
+
+    fn formatRotatedFileName(self: *Self, index: usize) ![]const u8 {
+        const timestamp = std.time.timestamp();
+        const formatted_time = try std.fmt.allocPrint(
+            self.allocator,
+            "{d}",
+            .{timestamp},
+        );
+        defer self.allocator.free(formatted_time);
+
+        const result = try std.mem.replaceOwned(u8, self.allocator, self.config.rotation_pattern, "{path}", self.config.path);
+        defer self.allocator.free(result);
+
+        const with_timestamp = try std.mem.replaceOwned(u8, self.allocator, result, "{timestamp}", formatted_time);
+        defer self.allocator.free(with_timestamp);
+
+        return std.fmt.allocPrint(
+            self.allocator,
+            "{s}",
+            .{try std.mem.replaceOwned(u8, self.allocator, with_timestamp, "{index}", try std.fmt.allocPrint(self.allocator, "{d}", .{index}))},
+        );
+    }
+
+    fn compressFile(self: *Self, source_path: []const u8, dest_path: []const u8) !void {
+        switch (self.config.compression) {
+            .none => return,
+            .gzip => {
+                var source_file = try std.fs.cwd().openFile(source_path, .{});
+                defer source_file.close();
+
+                var dest_file = try std.fs.cwd().createFile(dest_path, .{});
+                defer dest_file.close();
+
+                var gzip = try std.compress.gzip.gzipStream(self.allocator, dest_file.writer());
+                defer gzip.deinit();
+
+                try std.io.copy(source_file.reader(), gzip.writer());
+                try gzip.finish();
+            },
+            .zstd => {
+                // TODO: Implement ZSTD compression when available in std lib
+                return error.ZstdNotImplemented;
+            },
+        }
+    }
+
+    fn shouldRotate(self: *Self) bool {
+        const current_size = self.current_size.load(.monotonic);
+        const now = std.time.timestamp();
+
+        return switch (self.config.rotation_mode) {
+            .size => self.config.enable_rotation and current_size >= self.config.max_size,
+            .time => self.config.enable_rotation and (now - self.config.last_rotation) >= self.config.rotation_interval,
+            .both => self.config.enable_rotation and
+                (current_size >= self.config.max_size or
+                    (now - self.config.last_rotation) >= self.config.rotation_interval),
+        };
     }
 
     fn rotate(self: *Self) !void {
