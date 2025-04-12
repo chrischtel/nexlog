@@ -47,6 +47,7 @@ pub const NetworkHandler = struct {
             .connection = null,
             .reconnect_time = 0,
             .batch_count = 0,
+            .retry_state = .{},
         };
 
         return self;
