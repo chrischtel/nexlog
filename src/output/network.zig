@@ -14,8 +14,7 @@ pub const NetworkEndpoint = struct {
 
 pub const NetworkConfig = struct {
     endpoint: NetworkEndpoint,
-    retry_attempts: u32 = 3,
-    retry_delay_ms: u32 = 1000,
+    retry: RetryConfig = .{},
     buffer_size: usize = 32 * 1024, // 32KB default
     batch_size: usize = 100,
     flush_interval_ms: u32 = 5000,
@@ -33,6 +32,8 @@ pub const NetworkHandler = struct {
     connection: ?std.net.Stream,
     reconnect_time: i64,
     batch_count: usize,
+
+    retry_state: RetryState,
 
     pub fn init(allocator: std.mem.Allocator, config: NetworkConfig) !*Self {
         const self = try allocator.create(Self);
@@ -106,35 +107,41 @@ pub const NetworkHandler = struct {
     pub fn flush(self: *Self) !void {
         if (self.batch_count == 0) return;
 
-        var retry_count: u32 = 0;
-        while (retry_count < self.config.retry_attempts) : (retry_count += 1) {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        while (self.retry_state.attempts < self.config.retry.max_attempts) {
             if (try self.ensureConnection()) |conn| {
-                var temp_buffer: [4096]u8 = undefined;
+                // Try to send the data
+                self.sendBatch(conn) catch |err| {
+                    self.retry_state.consecutive_failures += 1;
+                    self.retry_state.attempts += 1;
+                    self.retry_state.current_delay_ms = self.calculateNextDelay();
 
-                // Write batch header
-                const header = try std.fmt.allocPrint(
-                    self.allocator,
-                    "POST {s} HTTP/1.1\r\nHost: {s}\r\nContent-Type: application/json\r\n\r\n",
-                    .{ self.config.endpoint.path, self.config.endpoint.host },
-                );
-                defer self.allocator.free(header);
+                    // If we've hit max attempts, propagate the error
+                    if (self.retry_state.attempts >= self.config.retry.max_attempts) {
+                        return err;
+                    }
 
-                try conn.writer().writeAll(header);
+                    // Wait before retry
+                    std.time.sleep(self.retry_state.current_delay_ms * std.time.ns_per_ms);
+                    continue;
+                };
 
-                // Send buffered logs
-                while (true) {
-                    const bytes_read = try self.circular_buffer.read(&temp_buffer);
-                    if (bytes_read == 0) break;
-                    try conn.writer().writeAll(temp_buffer[0..bytes_read]);
-                }
-
-                self.batch_count = 0;
-                self.last_flush = std.time.timestamp();
+                // Success! Reset retry state
+                self.resetRetryState();
                 return;
             }
 
-            // Wait before retry
-            std.time.sleep(self.config.retry_delay_ms * std.time.ns_per_ms);
+            // Connection failed, update retry state
+            self.retry_state.attempts += 1;
+            self.retry_state.current_delay_ms = self.calculateNextDelay();
+
+            if (self.retry_state.attempts >= self.config.retry.max_attempts) {
+                return error.NetworkError;
+            }
+
+            std.time.sleep(self.retry_state.current_delay_ms * std.time.ns_per_ms);
         }
 
         return error.NetworkError;
@@ -144,6 +151,30 @@ pub const NetworkHandler = struct {
         const now = std.time.timestamp();
         return self.batch_count >= self.config.batch_size or
             now - self.last_flush >= self.config.flush_interval_ms / 1000;
+    }
+
+    fn sendBatch(self: *Self, conn: std.net.Stream) !void {
+        var temp_buffer: [4096]u8 = undefined;
+
+        // Write batch header
+        const header = try std.fmt.allocPrint(
+            self.allocator,
+            "POST {s} HTTP/1.1\r\nHost: {s}\r\nContent-Type: application/json\r\n\r\n",
+            .{ self.config.endpoint.path, self.config.endpoint.host },
+        );
+        defer self.allocator.free(header);
+
+        try conn.writer().writeAll(header);
+
+        // Send buffered logs
+        while (true) {
+            const bytes_read = try self.circular_buffer.read(&temp_buffer);
+            if (bytes_read == 0) break;
+            try conn.writer().writeAll(temp_buffer[0..bytes_read]);
+        }
+
+        self.batch_count = 0;
+        self.last_flush = std.time.timestamp();
     }
 
     fn ensureConnection(self: *Self) !std.net.Stream {
@@ -180,6 +211,59 @@ pub const NetworkHandler = struct {
         self.connection = stream;
         return stream;
     }
+
+    fn calculateNextDelay(self: *Self) u32 {
+        const config = self.config.retry;
+        var delay: u32 = switch (config.strategy) {
+            .constant => config.initial_delay_ms,
+            .linear => config.initial_delay_ms * (self.retry_state.attempts + 1),
+            .exponential => config.initial_delay_ms * std.math.pow(u32, 2, self.retry_state.attempts),
+        };
+
+        // Apply max delay limit
+        delay = @min(delay, config.max_delay_ms);
+
+        // Add jitter
+        if (config.jitter_factor > 0) {
+            const jitter_range: f32 = @as(f32, @floatFromInt(delay)) * config.jitter_factor;
+            if (jitter_range > 0) {
+                var prng = std.rand.DefaultPrng.init(@intCast(std.time.timestamp()));
+                delay += @intFromFloat(prng.random().float(f32) * jitter_range);
+            }
+        }
+
+        return delay;
+    }
+
+    fn resetRetryState(self: *Self) void {
+        self.retry_state = .{
+            .attempts = 0,
+            .last_attempt = std.time.timestamp(),
+            .current_delay_ms = self.config.retry.initial_delay_ms,
+            .consecutive_failures = 0,
+        };
+    }
+};
+
+pub const RetryStrategy = enum {
+    constant,
+    exponential,
+    linear,
+};
+
+pub const RetryConfig = struct {
+    strategy: RetryStrategy = .exponential,
+    initial_delay_ms: u32 = 100,
+    max_delay_ms: u32 = 30_000,
+    max_attempts: u32 = 5,
+    jitter_factor: f32 = 0.1,
+};
+
+pub const RetryState = struct {
+    attempts: u32 = 0,
+    last_delay: u32 = 0,
+    current_delay: u32 = 0,
+    consecutive_failures: u32 = 0,
 };
 
 test "NetworkHandler initialization and deinitialization" {
