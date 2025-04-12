@@ -118,6 +118,7 @@ pub const FileHandler = struct {
         const new_size = self.current_size.fetchAdd(bytes_written, .monotonic);
         _ = new_size; // autofix
 
+        // Check rotation
         if (self.shouldRotate()) {
             try self.rotate();
         }
@@ -189,28 +190,6 @@ pub const FileHandler = struct {
             now - self.last_flush >= self.config.flush_interval_ms / 1000;
     }
 
-    fn formatRotatedFileName(self: *Self, index: usize) ![]const u8 {
-        const timestamp = std.time.timestamp();
-        const formatted_time = try std.fmt.allocPrint(
-            self.allocator,
-            "{d}",
-            .{timestamp},
-        );
-        defer self.allocator.free(formatted_time);
-
-        const result = try std.mem.replaceOwned(u8, self.allocator, self.config.rotation_pattern, "{path}", self.config.path);
-        defer self.allocator.free(result);
-
-        const with_timestamp = try std.mem.replaceOwned(u8, self.allocator, result, "{timestamp}", formatted_time);
-        defer self.allocator.free(with_timestamp);
-
-        return std.fmt.allocPrint(
-            self.allocator,
-            "{s}",
-            .{try std.mem.replaceOwned(u8, self.allocator, with_timestamp, "{index}", try std.fmt.allocPrint(self.allocator, "{d}", .{index}))},
-        );
-    }
-
     fn compressFile(self: *Self, source_path: []const u8, dest_path: []const u8) !void {
         switch (self.config.compression) {
             .none => return,
@@ -235,44 +214,74 @@ pub const FileHandler = struct {
     }
 
     fn shouldRotate(self: *Self) bool {
+        if (!self.config.enable_rotation) return false;
+
         const current_size = self.current_size.load(.monotonic);
         const now = std.time.timestamp();
 
         return switch (self.config.rotation_mode) {
-            .size => self.config.enable_rotation and current_size >= self.config.max_size,
-            .time => self.config.enable_rotation and (now - self.config.last_rotation) >= self.config.rotation_interval,
-            .both => self.config.enable_rotation and
-                (current_size >= self.config.max_size or
-                    (now - self.config.last_rotation) >= self.config.rotation_interval),
+            .size => current_size >= self.config.max_size,
+            .time => (now - self.config.last_rotation) >= self.config.rotation_interval,
+            .both => current_size >= self.config.max_size or
+                (now - self.config.last_rotation) >= self.config.rotation_interval,
         };
+    }
+
+    fn formatRotatedFileName(self: *Self, index: usize) ![]const u8 {
+        const timestamp = std.time.timestamp();
+        var result = self.config.rotation_pattern;
+
+        // Replace {path}
+        if (std.mem.indexOf(u8, result, "{path}")) |_| {
+            const temp = try std.mem.replaceOwned(u8, self.allocator, result, "{path}", self.config.path);
+            if (result != self.config.rotation_pattern) self.allocator.free(result);
+            result = temp;
+        }
+
+        // Replace {timestamp}
+        if (std.mem.indexOf(u8, result, "{timestamp}")) |_| {
+            const timestamp_str = try std.fmt.allocPrint(self.allocator, "{d}", .{timestamp});
+            defer self.allocator.free(timestamp_str);
+            const temp = try std.mem.replaceOwned(u8, self.allocator, result, "{timestamp}", timestamp_str);
+            if (result != self.config.rotation_pattern) self.allocator.free(result);
+            result = temp;
+        }
+
+        // Replace {index}
+        if (std.mem.indexOf(u8, result, "{index}")) |_| {
+            const index_str = try std.fmt.allocPrint(self.allocator, "{d}", .{index});
+            defer self.allocator.free(index_str);
+            const temp = try std.mem.replaceOwned(u8, self.allocator, result, "{index}", index_str);
+            if (result != self.config.rotation_pattern) self.allocator.free(result);
+            result = temp;
+        }
+
+        return result;
     }
 
     fn rotate(self: *Self) !void {
         if (self.file) |file| {
-            // Create backup first
             const timestamp = std.time.timestamp();
-            const backup_path = try self.formatRotatedFileName(0);
-            defer self.allocator.free(backup_path);
+
+            // Flush any remaining data
+            try self.flush();
 
             file.close();
             self.file = null;
 
-            // Rename current file to backup
-            try std.fs.cwd().rename(self.config.path, backup_path);
-
             // Rotate existing files
             var i: usize = self.config.max_rotated_files;
             while (i > 0) : (i -= 1) {
-                const old_path = try self.formatRotatedFileName(i - 1);
-                defer self.allocator.free(old_path);
+                const old_name = try self.formatRotatedFileName(i - 1);
+                defer self.allocator.free(old_name);
 
-                const new_path = try self.formatRotatedFileName(i);
-                defer self.allocator.free(new_path);
+                const new_name = try self.formatRotatedFileName(i);
+                defer self.allocator.free(new_name);
 
-                std.fs.cwd().rename(old_path, new_path) catch |err| switch (err) {
+                std.fs.cwd().rename(old_name, new_name) catch |err| switch (err) {
                     error.FileNotFound => continue,
                     else => |e| {
-                        std.log.warn("Failed to rotate {s}: {}", .{ old_path, e });
+                        std.log.warn("Failed to rotate {s}: {}", .{ old_name, e });
                         continue;
                     },
                 };
@@ -281,15 +290,21 @@ pub const FileHandler = struct {
                 if (self.config.compression != .none) {
                     const compressed_path = try std.fmt.allocPrint(
                         self.allocator,
-                        "{s}.{s}",
-                        .{ new_path, @tagName(self.config.compression) },
+                        "{s}.gz",
+                        .{new_name},
                     );
                     defer self.allocator.free(compressed_path);
 
-                    try self.compressFile(new_path, compressed_path);
-                    try std.fs.cwd().deleteFile(new_path);
+                    try self.compressFile(new_name, compressed_path);
+                    try std.fs.cwd().deleteFile(new_name);
                 }
             }
+
+            // Rename current file to first rotated file
+            const first_rotated = try self.formatRotatedFileName(0);
+            defer self.allocator.free(first_rotated);
+
+            try std.fs.cwd().rename(self.config.path, first_rotated);
 
             // Create new file
             self.file = try std.fs.cwd().createFile(self.config.path, .{});
@@ -297,7 +312,6 @@ pub const FileHandler = struct {
             self.config.last_rotation = timestamp;
         }
     }
-
     // Interface conversion method - fixed to use the new handler interface
     pub fn toLogHandler(self: *Self) handlers.LogHandler {
         return handlers.LogHandler.init(
