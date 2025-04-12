@@ -14,6 +14,7 @@ pub const CompressionType = enum {
     none,
     gzip,
     zlib,
+    zstd,
 };
 
 pub const FileConfig = struct {
@@ -115,9 +116,9 @@ pub const FileHandler = struct {
         // Write to buffer
         const bytes_written = try self.circular_buffer.write(formatted);
         const new_size = self.current_size.fetchAdd(bytes_written, .monotonic);
+        _ = new_size; // autofix
 
-        // Check rotation before writing
-        if (self.config.enable_rotation and new_size >= self.config.max_size) {
+        if (self.shouldRotate()) {
             try self.rotate();
         }
 
@@ -143,7 +144,7 @@ pub const FileHandler = struct {
         }
 
         // Check rotation before writing
-        if (self.config.enable_rotation and self.current_size.load(.monotonic) >= self.config.max_size) {
+        if (self.shouldRotate()) {
             try self.rotate();
         }
 
@@ -220,11 +221,11 @@ pub const FileHandler = struct {
                 var dest_file = try std.fs.cwd().createFile(dest_path, .{});
                 defer dest_file.close();
 
-                var gzip = try std.compress.gzip.gzipStream(self.allocator, dest_file.writer());
-                defer gzip.deinit();
-
-                try std.io.copy(source_file.reader(), gzip.writer());
-                try gzip.finish();
+                try std.compress.gzip.compress(source_file.reader(), dest_file.writer(), .{});
+            },
+            .zlib => {
+                // TODO: Implement Zlib compression when available in std lib
+                return error.ZlibNotImplemented;
             },
             .zstd => {
                 // TODO: Implement ZSTD compression when available in std lib
@@ -249,34 +250,23 @@ pub const FileHandler = struct {
     fn rotate(self: *Self) !void {
         if (self.file) |file| {
             // Create backup first
-            const backup_path = try std.fmt.allocPrint(
-                self.allocator,
-                "{s}.tmp",
-                .{self.config.path},
-            );
+            const timestamp = std.time.timestamp();
+            const backup_path = try self.formatRotatedFileName(0);
             defer self.allocator.free(backup_path);
 
             file.close();
             self.file = null;
 
-            // Safe rotation
+            // Rename current file to backup
             try std.fs.cwd().rename(self.config.path, backup_path);
 
             // Rotate existing files
             var i: usize = self.config.max_rotated_files;
             while (i > 0) : (i -= 1) {
-                const old_path = try std.fmt.allocPrint(
-                    self.allocator,
-                    "{s}.{d}",
-                    .{ self.config.path, i - 1 },
-                );
+                const old_path = try self.formatRotatedFileName(i - 1);
                 defer self.allocator.free(old_path);
 
-                const new_path = try std.fmt.allocPrint(
-                    self.allocator,
-                    "{s}.{d}",
-                    .{ self.config.path, i },
-                );
+                const new_path = try self.formatRotatedFileName(i);
                 defer self.allocator.free(new_path);
 
                 std.fs.cwd().rename(old_path, new_path) catch |err| switch (err) {
@@ -286,20 +276,25 @@ pub const FileHandler = struct {
                         continue;
                     },
                 };
-            }
 
-            // Move backup to .1
-            const final_path = try std.fmt.allocPrint(
-                self.allocator,
-                "{s}.1",
-                .{self.config.path},
-            );
-            defer self.allocator.free(final_path);
-            try std.fs.cwd().rename(backup_path, final_path);
+                // Compress the rotated file if needed
+                if (self.config.compression != .none) {
+                    const compressed_path = try std.fmt.allocPrint(
+                        self.allocator,
+                        "{s}.{s}",
+                        .{ new_path, @tagName(self.config.compression) },
+                    );
+                    defer self.allocator.free(compressed_path);
+
+                    try self.compressFile(new_path, compressed_path);
+                    try std.fs.cwd().deleteFile(new_path);
+                }
+            }
 
             // Create new file
             self.file = try std.fs.cwd().createFile(self.config.path, .{});
             self.current_size.store(0, .release);
+            self.config.last_rotation = timestamp;
         }
     }
 
