@@ -1,7 +1,6 @@
 const std = @import("std");
 const errors = @import("../core/errors.zig");
-const BufferError = errors.BufferError;
-
+pub const BufferError = errors.BufferError;
 /// A high-performance circular buffer implementation
 pub const CircularBuffer = struct {
     const Self = @This();
