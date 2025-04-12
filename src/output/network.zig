@@ -285,3 +285,193 @@ test "NetworkHandler initialization and deinitialization" {
     try expect(handler.config.endpoint.port == config.endpoint.port);
     try expect(handler.circular_buffer.buffer.len == config.buffer_size);
 }
+
+test "NetworkHandler retry strategies" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    // Test configuration
+    const config = NetworkConfig{
+        .endpoint = .{
+            .host = "localhost",
+            .port = 8080,
+        },
+        .retry = .{
+            .strategy = .exponential,
+            .initial_delay_ms = 10,
+            .max_delay_ms = 1000,
+            .max_attempts = 3,
+            .jitter_factor = 0.1,
+        },
+    };
+
+    var handler = try NetworkHandler.init(allocator, config);
+    defer handler.deinit();
+
+    // Test delay calculations
+    {
+        // Test initial delay
+        try expect(handler.calculateNextDelay() == 10);
+
+        // Test exponential backoff
+        handler.retry_state.attempts = 1;
+        const delay1 = handler.calculateNextDelay();
+        try expect(delay1 >= 20 and delay1 <= 22); // Account for jitter
+
+        handler.retry_state.attempts = 2;
+        const delay2 = handler.calculateNextDelay();
+        try expect(delay2 >= 40 and delay2 <= 44); // Account for jitter
+
+        // Test max delay limit
+        handler.retry_state.attempts = 10; // Should hit max_delay_ms
+        try expect(handler.calculateNextDelay() <= config.retry.max_delay_ms);
+    }
+
+    // Test retry state management
+    {
+        handler.resetRetryState();
+        try expect(handler.retry_state.attempts == 0);
+        try expect(handler.retry_state.consecutive_failures == 0);
+        try expect(handler.retry_state.current_delay_ms == config.retry.initial_delay_ms);
+    }
+}
+
+test "NetworkHandler retry strategies comparison" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    // Test different strategies
+    const strategies = [_]RetryStrategy{ .constant, .linear, .exponential };
+    for (strategies) |strategy| {
+        const config = NetworkConfig{
+            .endpoint = .{
+                .host = "localhost",
+                .port = 8080,
+            },
+            .retry = .{
+                .strategy = strategy,
+                .initial_delay_ms = 10,
+                .max_delay_ms = 1000,
+                .max_attempts = 3,
+                .jitter_factor = 0, // Disable jitter for predictable testing
+            },
+        };
+
+        var handler = try NetworkHandler.init(allocator, config);
+        defer handler.deinit();
+
+        // Test progression of delays
+        var last_delay: u32 = 0;
+        var i: u32 = 0;
+        while (i < 3) : (i += 1) {
+            handler.retry_state.attempts = i;
+            const current_delay = handler.calculateNextDelay();
+
+            switch (strategy) {
+                .constant => {
+                    try expect(current_delay == config.retry.initial_delay_ms);
+                },
+                .linear => {
+                    try expect(current_delay == config.retry.initial_delay_ms * (i + 1));
+                },
+                .exponential => {
+                    try expect(current_delay == config.retry.initial_delay_ms * std.math.pow(u32, 2, i));
+                },
+            }
+
+            if (i > 0) {
+                switch (strategy) {
+                    .constant => try expect(current_delay == last_delay),
+                    .linear => try expect(current_delay > last_delay),
+                    .exponential => try expect(current_delay > last_delay),
+                }
+            }
+
+            last_delay = current_delay;
+        }
+    }
+}
+
+test "NetworkHandler retry with mock connection" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    const config = NetworkConfig{
+        .endpoint = .{
+            .host = "localhost",
+            .port = 8080,
+        },
+        .retry = .{
+            .strategy = .constant,
+            .initial_delay_ms = 1,
+            .max_delay_ms = 10,
+            .max_attempts = 3,
+            .jitter_factor = 0,
+        },
+    };
+
+    var handler = try NetworkHandler.init(allocator, config);
+    defer handler.deinit();
+
+    // Add some test data
+    try handler.write(.info, "test message", null);
+    try expect(handler.batch_count == 1);
+
+    // Attempt flush (will fail due to no real connection)
+    handler.flush() catch |err| {
+        try expect(err == error.NetworkError);
+        try expect(handler.retry_state.attempts == config.retry.max_attempts);
+        try expect(handler.retry_state.consecutive_failures > 0);
+    };
+}
+
+test "NetworkHandler jitter behavior" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    const config = NetworkConfig{
+        .endpoint = .{
+            .host = "localhost",
+            .port = 8080,
+        },
+        .retry = .{
+            .strategy = .constant,
+            .initial_delay_ms = 100,
+            .max_delay_ms = 1000,
+            .max_attempts = 3,
+            .jitter_factor = 0.5, // 50% jitter
+        },
+    };
+
+    var handler = try NetworkHandler.init(allocator, config);
+    defer handler.deinit();
+
+    // Test that jitter produces different delays
+    var delays = std.ArrayList(u32).init(allocator);
+    defer delays.deinit();
+
+    // Calculate multiple delays and ensure they're different
+    var i: usize = 0;
+    while (i < 10) : (i += 1) {
+        const delay = handler.calculateNextDelay();
+        try delays.append(delay);
+        // Verify delay is within jitter bounds
+        try expect(delay >= config.retry.initial_delay_ms * 0.5);
+        try expect(delay <= config.retry.initial_delay_ms * 1.5);
+    }
+
+    // Verify that at least some delays are different (jitter working)
+    var all_same = true;
+    const first_delay = delays.items[0];
+    for (delays.items[1..]) |delay| {
+        if (delay != first_delay) {
+            all_same = false;
+            break;
+        }
+    }
+    try expect(!all_same);
+}
