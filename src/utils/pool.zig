@@ -1,6 +1,5 @@
 const std = @import("std");
 const errors = @import("../core/errors.zig");
-const BufferError = errors.BufferError;
 
 /// A generic object pool implementation
 pub fn Pool(comptime T: type) type {

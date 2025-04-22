@@ -29,7 +29,6 @@ pub const Logger = core.logger.Logger;
 pub const LogLevel = core.types.LogLevel;
 pub const LogConfig = core.config.LogConfig;
 pub const LogMetadata = core.types.LogMetadata;
-pub const LogError = core.errors.LogError;
 
 // Re-export initialization functions
 pub const init = core.init.init;

@@ -1,6 +1,5 @@
 const std = @import("std");
 const errors = @import("../core/errors.zig");
-const BufferError = errors.BufferError;
 
 /// A high-performance circular buffer implementation
 pub const CircularBuffer = struct {
@@ -109,7 +108,7 @@ pub const CircularBuffer = struct {
 
         if (data.len > self.capacity()) {
             _ = self.overflow_attempts.fetchAdd(1, .monotonic);
-            return BufferError.BufferOverflow;
+            return error.BufferOverflow;
         }
 
         const available_space = self.availableSpace();
@@ -123,7 +122,7 @@ pub const CircularBuffer = struct {
 
             // If still not enough space after compaction
             if (self.availableSpace() < data.len) {
-                return BufferError.BufferFull;
+                return error.BufferFull;
             }
         }
 
@@ -196,7 +195,7 @@ pub const CircularBuffer = struct {
 
     fn readInternal(self: *Self, dest: []u8) !usize {
         if (self.isEmpty()) {
-            return BufferError.BufferUnderflow;
+            return error.BufferUnderflow;
         }
 
         var bytes_read: usize = 0;
@@ -236,7 +235,7 @@ pub const CircularBuffer = struct {
 
         if (self.isEmpty()) {
             _ = self.underflow_attempts.fetchAdd(1, .monotonic);
-            return BufferError.BufferUnderflow;
+            return error.BufferUnderflow;
         }
 
         var bytes_read: usize = 0;
@@ -333,7 +332,7 @@ pub const BufferPool = struct {
             return new_buffer;
         }
 
-        return BufferError.BufferFull;
+        return error.BufferFull;
     }
 
     /// Release a buffer back to the pool

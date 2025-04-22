@@ -18,7 +18,7 @@ pub const GlobalState = struct {
         defer self.mutex.unlock();
 
         if (self.is_initialized) {
-            return errors.LogError.AlreadyInitialized;
+            return errors.Error.ConfigError;
         }
 
         self.allocator = alloc;

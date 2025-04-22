@@ -170,7 +170,7 @@ pub const FileHandler = struct {
             if (self.circular_buffer.len() > 0) {
                 while (true) {
                     const bytes_read = self.circular_buffer.read(&temp_buffer) catch |err| {
-                        if (err == errors.BufferError.BufferUnderflow) {
+                        if (err == error.BufferUnderflow) {
                             break;
                         }
                         self.handleError(err, "Failed to read from circular buffer during flush");
@@ -305,9 +305,18 @@ pub const FileHandler = struct {
         }
     }
 
+    fn toErrorSet(err: anyerror) errors.Error {
+        return switch (err) {
+            error.BufferOverflow, error.BufferUnderflow, error.FlushFailed, error.CompactionFailed, error.BufferFull, error.InvalidAlignment => errors.Error.BufferError,
+            error.InvalidConfiguration, error.InvalidLogLevel, error.InvalidBufferSize, error.InvalidRotationPolicy, error.InvalidFilterExpression, error.InvalidTimeFormat, error.InvalidPath, error.ConflictingOptions => errors.Error.ConfigError,
+            error.FileNotFound, error.PermissionDenied, error.DirectoryNotFound, error.DiskFull, error.RotationLimitReached, error.InvalidFilePath, error.LockTimeout, error.NoSpaceLeft, error.InvalidUtf8, error.DiskQuota, error.FileTooBig, error.InputOutput, error.DeviceBusy, error.InvalidArgument, error.AccessDenied, error.BrokenPipe, error.SystemResources, error.OperationAborted, error.NotOpenForWriting, error.LockViolation, error.WouldBlock, error.ConnectionResetByPeer, error.ProcessNotFound, error.NoDevice, error.SharingViolation, error.PathAlreadyExists, error.PipeBusy, error.NameTooLong, error.InvalidWtf8, error.BadPathName, error.NetworkNotFound, error.AntivirusInterference, error.SymLinkLoop, error.ProcessFdQuotaExceeded, error.SystemFdQuotaExceeded, error.IsDir, error.NotDir, error.FileLocksNotSupported, error.FileBusy, error.FileSystem, error.ConnectionTimedOut, error.NotOpenForReading, error.SocketNotConnected, error.Canceled, error.OutOfMemory => errors.Error.IOError,
+            else => errors.Error.Unexpected,
+        };
+    }
+
     fn handleError(self: *Self, err: anyerror, msg: []const u8) void {
         const ctx = errors.makeError(
-            err,
+            Self.toErrorSet(err),
             msg,
             @src().file,
             @src().line,

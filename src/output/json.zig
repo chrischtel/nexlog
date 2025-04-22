@@ -21,7 +21,9 @@ pub const JsonHandler = struct {
 
     pub fn init(allocator: std.mem.Allocator, config: JsonHandlerConfig) errors.Error!*Self {
         // Allocate the handler first
-        var handler = try allocator.create(Self);
+        var handler = allocator.create(Self) catch {
+            return errors.Error.BufferError;
+        };
         errdefer allocator.destroy(handler);
 
         // Initialize with safe defaults
@@ -38,16 +40,16 @@ pub const JsonHandler = struct {
             handler.file = std.fs.createFileAbsolute(path, .{
                 .read = true,
                 .truncate = true,
-            }) catch |err| {
+            }) catch {
                 allocator.destroy(handler);
-                return err;
+                return errors.Error.IOError;
             };
 
             // Write initial bracket
-            handler.file.?.writeAll("[\n") catch |err| {
+            handler.file.?.writeAll("[\n") catch {
                 handler.file.?.close();
                 allocator.destroy(handler);
-                return err;
+                return errors.Error.IOError;
             };
         }
 
@@ -92,30 +94,38 @@ pub const JsonHandler = struct {
         message: []const u8,
         metadata: ?types.LogMetadata,
     ) errors.Error!void {
-        if (!self.is_initialized) return error.NotInitialized;
+        if (!self.is_initialized) return errors.Error.ConfigError;
 
         // Early return for filtered levels
         if (@intFromEnum(level) < @intFromEnum(self.config.min_level)) {
             return;
         }
 
-        const json_str = try json.serializeLogEntry(
+        const json_str = json.serializeLogEntry(
             self.allocator,
             level,
             message,
             metadata,
-        );
+        ) catch {
+            return errors.Error.BufferError;
+        };
         defer self.allocator.free(json_str);
 
         if (self.file) |*file| {
             // Add comma if not first entry
             if (self.has_written) {
-                try file.writeAll(",\n");
+                file.writeAll(",\n") catch {
+                    return errors.Error.IOError;
+                };
             }
-            try file.writeAll(json_str);
+            file.writeAll(json_str) catch {
+                return errors.Error.IOError;
+            };
             self.has_written = true;
         } else {
-            try std.io.getStdOut().writer().print("{s}\n", .{json_str});
+            std.io.getStdOut().writer().print("{s}\n", .{json_str}) catch {
+                return errors.Error.IOError;
+            };
         }
     }
 
@@ -123,7 +133,7 @@ pub const JsonHandler = struct {
         self: *Self,
         formatted_message: []const u8,
     ) errors.Error!void {
-        if (!self.is_initialized) return error.NotInitialized;
+        if (!self.is_initialized) return errors.Error.ConfigError;
 
         // For the JSON handler, we handle formatted messages by writing them directly
         // But we need to ensure the JSON structure is maintained
@@ -131,36 +141,48 @@ pub const JsonHandler = struct {
         if (self.file) |*file| {
             // Add comma if not first entry
             if (self.has_written) {
-                try file.writeAll(",\n");
+                file.writeAll(",\n") catch {
+                    return errors.Error.IOError;
+                };
             }
 
             // Since we don't know the structure of the formatted message,
             // we'll wrap it in a simplified JSON object
-            const buf = try self.allocator.alloc(u8, formatted_message.len + 40);
+            const buf = self.allocator.alloc(u8, formatted_message.len + 40) catch {
+                return errors.Error.BufferError;
+            };
             defer self.allocator.free(buf);
 
             const json_wrapper = std.fmt.bufPrint(
                 buf,
                 "{{ \"message\": {s} }}",
                 .{std.fmt.fmtSliceEscapeUpper(formatted_message)},
-            ) catch |err| {
+            ) catch {
                 // Fallback to direct writing if formatting fails
-                try file.writeAll(formatted_message);
+                file.writeAll(formatted_message) catch {
+                    return errors.Error.IOError;
+                };
                 self.has_written = true;
-                return err;
+                return errors.Error.BufferError;
             };
 
-            try file.writeAll(json_wrapper);
+            file.writeAll(json_wrapper) catch {
+                return errors.Error.IOError;
+            };
             self.has_written = true;
         } else {
-            try std.io.getStdOut().writer().print("{s}\n", .{formatted_message});
+            std.io.getStdOut().writer().print("{s}\n", .{formatted_message}) catch {
+                return errors.Error.IOError;
+            };
         }
     }
 
     pub fn flush(self: *Self) errors.Error!void {
-        if (!self.is_initialized) return error.NotInitialized;
+        if (!self.is_initialized) return errors.Error.ConfigError;
         if (self.file) |*file| {
-            try file.sync();
+            file.sync() catch {
+                return errors.Error.IOError;
+            };
         }
     }
 
