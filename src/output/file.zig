@@ -91,24 +91,36 @@ pub const FileHandler = struct {
 
         // Format log entry
         const timestamp = if (metadata) |m| m.timestamp else std.time.timestamp();
-        const formatted = try std.fmt.allocPrint(
+        const formatted = std.fmt.allocPrint(
             allocator,
             "[{d}] [{s}] {s}\n",
             .{ timestamp, level.toString(), message },
-        );
+        ) catch |err| {
+            self.handleError(err, "Failed to format log entry");
+            return err;
+        };
 
         // Write to buffer
-        const bytes_written = try self.circular_buffer.write(formatted);
+        const bytes_written = self.circular_buffer.write(formatted) catch |err| {
+            self.handleError(err, "Failed to write to circular buffer");
+            return err;
+        };
         const new_size = self.current_size.fetchAdd(bytes_written, .monotonic);
 
         // Check rotation before writing
         if (self.config.enable_rotation and new_size >= self.config.max_size) {
-            try self.rotate();
+            self.rotate() catch |err| {
+                self.handleError(err, "Failed to rotate log file");
+                return err;
+            };
         }
 
         // Check if we need to flush
         if (self.shouldFlush()) {
-            try self.flush();
+            self.flush() catch |err| {
+                self.handleError(err, "Failed to flush log file");
+                return err;
+            };
         }
     }
 
@@ -117,11 +129,17 @@ pub const FileHandler = struct {
         defer self.mutex.unlock();
 
         // Write to buffer directly
-        const bytes_written = try self.circular_buffer.write(formatted_message);
+        const bytes_written = self.circular_buffer.write(formatted_message) catch |err| {
+            self.handleError(err, "Failed to write formatted log to buffer");
+            return err;
+        };
 
         // Add newline if not present
         if (formatted_message.len > 0 and formatted_message[formatted_message.len - 1] != '\n') {
-            _ = try self.circular_buffer.write("\n");
+            _ = self.circular_buffer.write("\n") catch |err| {
+                self.handleError(err, "Failed to write newline to buffer");
+                return err;
+            };
             _ = self.current_size.fetchAdd(bytes_written + 1, .monotonic);
         } else {
             _ = self.current_size.fetchAdd(bytes_written, .monotonic);
@@ -129,12 +147,18 @@ pub const FileHandler = struct {
 
         // Check rotation before writing
         if (self.config.enable_rotation and self.current_size.load(.monotonic) >= self.config.max_size) {
-            try self.rotate();
+            self.rotate() catch |err| {
+                self.handleError(err, "Failed to rotate log file");
+                return err;
+            };
         }
 
         // Check if we need to flush
         if (self.shouldFlush()) {
-            try self.flush();
+            self.flush() catch |err| {
+                self.handleError(err, "Failed to flush log file");
+                return err;
+            };
         }
     }
 
@@ -149,20 +173,30 @@ pub const FileHandler = struct {
                         if (err == errors.BufferError.BufferUnderflow) {
                             break;
                         }
+                        self.handleError(err, "Failed to read from circular buffer during flush");
                         return err;
                     };
 
                     if (bytes_read == 0) break;
-                    try file.writeAll(temp_buffer[0..bytes_read]);
+                    file.writeAll(temp_buffer[0..bytes_read]) catch |err| {
+                        self.handleError(err, "Failed to write to file during flush");
+                        return err;
+                    };
                 }
-                try file.sync();
+                file.sync() catch |err| {
+                    self.handleError(err, "Failed to sync file during flush");
+                    return err;
+                };
             }
 
             self.last_flush = std.time.timestamp();
 
             // Check rotation after flush
             if (self.config.enable_rotation and self.current_size.load(.monotonic) >= self.config.max_size) {
-                try self.rotate();
+                self.rotate() catch |err| {
+                    self.handleError(err, "Failed to rotate log file after flush");
+                    return err;
+                };
             }
         }
     }
@@ -173,59 +207,100 @@ pub const FileHandler = struct {
             now - self.last_flush >= self.config.flush_interval_ms / 1000;
     }
 
+    fn compressFile(self: *Self, source_path: []const u8, dest_path: []const u8) !void {
+        if (self.config.compression == .none) return;
+        var source_file = std.fs.cwd().openFile(source_path, .{}) catch |err| {
+            self.handleError(err, "Failed to open source file for compression");
+            return err;
+        };
+        defer source_file.close();
+
+        var dest_file = std.fs.cwd().createFile(dest_path, .{}) catch |err| {
+            self.handleError(err, "Failed to create destination file for compression");
+            return err;
+        };
+        defer dest_file.close();
+
+        std.compress.gzip.compress(source_file.reader(), dest_file.writer(), .{}) catch |err| {
+            self.handleError(err, "Failed to compress file");
+            return err;
+        };
+    }
+
     fn rotate(self: *Self) !void {
         if (self.file) |file| {
             // Create backup first
-            const backup_path = try std.fmt.allocPrint(
+            const backup_path = std.fmt.allocPrint(
                 self.allocator,
                 "{s}.tmp",
                 .{self.config.path},
-            );
+            ) catch |err| {
+                self.handleError(err, "Failed to allocate backup path for rotation");
+                return err;
+            };
             defer self.allocator.free(backup_path);
 
             file.close();
             self.file = null;
 
             // Safe rotation
-            try std.fs.cwd().rename(self.config.path, backup_path);
+            std.fs.cwd().rename(self.config.path, backup_path) catch |err| {
+                self.handleError(err, "Failed to rename file for rotation");
+                return err;
+            };
 
             // Rotate existing files
             var i: usize = self.config.max_rotated_files;
             while (i > 0) : (i -= 1) {
-                const old_path = try std.fmt.allocPrint(
+                const old_path = std.fmt.allocPrint(
                     self.allocator,
                     "{s}.{d}",
                     .{ self.config.path, i - 1 },
-                );
+                ) catch |err| {
+                    self.handleError(err, "Failed to allocate old path for rotation");
+                    return err;
+                };
                 defer self.allocator.free(old_path);
 
-                const new_path = try std.fmt.allocPrint(
+                const new_path = std.fmt.allocPrint(
                     self.allocator,
                     "{s}.{d}",
                     .{ self.config.path, i },
-                );
+                ) catch |err| {
+                    self.handleError(err, "Failed to allocate new path for rotation");
+                    return err;
+                };
                 defer self.allocator.free(new_path);
 
                 std.fs.cwd().rename(old_path, new_path) catch |err| switch (err) {
                     error.FileNotFound => continue,
                     else => |e| {
-                        std.log.warn("Failed to rotate {s}: {}", .{ old_path, e });
+                        self.handleError(e, "Failed to rotate old log file");
                         continue;
                     },
                 };
             }
 
             // Move backup to .1
-            const final_path = try std.fmt.allocPrint(
+            const final_path = std.fmt.allocPrint(
                 self.allocator,
                 "{s}.1",
                 .{self.config.path},
-            );
+            ) catch |err| {
+                self.handleError(err, "Failed to allocate final path for rotation");
+                return err;
+            };
             defer self.allocator.free(final_path);
-            try std.fs.cwd().rename(backup_path, final_path);
+            std.fs.cwd().rename(backup_path, final_path) catch |err| {
+                self.handleError(err, "Failed to rename backup to rotated file");
+                return err;
+            };
 
             // Create new file
-            self.file = try std.fs.cwd().createFile(self.config.path, .{});
+            self.file = std.fs.cwd().createFile(self.config.path, .{}) catch |err| {
+                self.handleError(err, "Failed to create new log file after rotation");
+                return err;
+            };
             self.current_size.store(0, .release);
         }
     }
