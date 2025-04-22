@@ -28,8 +28,9 @@ pub const FileHandler = struct {
     circular_buffer: *buffer.CircularBuffer,
     last_flush: i64,
     current_size: std.atomic.Value(usize),
+    error_handler: ?*const errors.ErrorHandler = null,
 
-    pub fn init(allocator: std.mem.Allocator, config: FileConfig) !*Self {
+    pub fn init(allocator: std.mem.Allocator, config: FileConfig, error_handler: ?*const errors.ErrorHandler) !*Self {
         // Validate config
         if (config.path.len == 0) return error.InvalidPath;
         if (config.buffer_size == 0) return error.InvalidBufferSize;
@@ -49,6 +50,7 @@ pub const FileHandler = struct {
             .circular_buffer = circular_buf,
             .last_flush = std.time.timestamp(),
             .current_size = std.atomic.Value(usize).init(0),
+            .error_handler = error_handler,
         };
 
         // Safe file opening
@@ -56,6 +58,7 @@ pub const FileHandler = struct {
             .truncate = config.mode == .truncate,
         }) catch |err| {
             self.circular_buffer.deinit();
+            self.handleError(err, "Failed to open log file");
             return err;
         };
 
@@ -224,6 +227,20 @@ pub const FileHandler = struct {
             // Create new file
             self.file = try std.fs.cwd().createFile(self.config.path, .{});
             self.current_size.store(0, .release);
+        }
+    }
+
+    fn handleError(self: *Self, err: anyerror, msg: []const u8) void {
+        const ctx = errors.makeError(
+            err,
+            msg,
+            @src().file,
+            @src().line,
+        );
+        if (self.error_handler) |handler| {
+            handler.handle(ctx) catch {};
+        } else {
+            errors.defaultErrorHandler(ctx) catch {};
         }
     }
 
