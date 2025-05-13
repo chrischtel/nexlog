@@ -1,6 +1,5 @@
 const std = @import("std");
 const errors = @import("../core/errors.zig");
-const BufferError = errors.BufferError;
 
 /// A generic object pool implementation
 pub fn Pool(comptime T: type) type {
@@ -11,6 +10,8 @@ pub fn Pool(comptime T: type) type {
         const PoolItem = struct {
             data: T,
             in_use: bool,
+            last_used: i64,
+            use_count: usize,
         };
 
         allocator: std.mem.Allocator,
@@ -19,6 +20,16 @@ pub fn Pool(comptime T: type) type {
         destroy_fn: *const fn (item: *T) void,
         mutex: std.Thread.Mutex,
         stats: PoolStats,
+
+        config: PoolConfig,
+
+        pub const PoolConfig = struct {
+            initial_size: usize,
+            max_size: usize,
+            growth_factor: f32 = 1.5,
+            shrink_threshold: f32 = 0.5,
+            item_timeout_ms: i64 = 60_000,
+        };
 
         pub const PoolStats = struct {
             total_items: usize,
@@ -31,7 +42,7 @@ pub fn Pool(comptime T: type) type {
         /// Initialize a new pool
         pub fn init(
             allocator: std.mem.Allocator,
-            initial_size: usize,
+            config: PoolConfig,
             create_fn: *const fn (allocator: std.mem.Allocator) errors.Error!T,
             destroy_fn: *const fn (item: *T) void,
         ) !*Self {
@@ -39,17 +50,21 @@ pub fn Pool(comptime T: type) type {
 
             self.* = .{
                 .allocator = allocator,
-                .items = try allocator.alloc(PoolItem, initial_size),
+                .items = try allocator.alloc(PoolItem, config.initial_size),
                 .create_fn = create_fn,
                 .destroy_fn = destroy_fn,
                 .mutex = std.Thread.Mutex{},
                 .stats = .{
-                    .total_items = initial_size,
+                    .total_items = config.initial_size,
                     .items_in_use = 0,
                     .peak_usage = 0,
                     .total_acquisitions = 0,
                     .total_releases = 0,
+                    .cache_hits = 0,
+                    .cache_misses = 0,
+                    .average_wait_time_ns = 0,
                 },
+                .config = config,
             };
 
             // Initialize pool items
@@ -57,6 +72,8 @@ pub fn Pool(comptime T: type) type {
                 item.* = .{
                     .data = try create_fn(allocator),
                     .in_use = false,
+                    .last_used = 0,
+                    .use_count = 0,
                 };
             }
 
@@ -74,48 +91,73 @@ pub fn Pool(comptime T: type) type {
 
         /// Acquire an item from the pool
         pub fn acquire(self: *Self) !*T {
+            const start_time = std.time.nanoTimestamp();
             self.mutex.lock();
             defer self.mutex.unlock();
 
-            // Find first available item
+            // Try to find an available item
+            const now = std.time.timestamp();
             for (self.items) |*item| {
                 if (!item.in_use) {
                     item.in_use = true;
+                    item.last_used = now;
+                    item.use_count += 1;
                     self.stats.items_in_use += 1;
                     self.stats.total_acquisitions += 1;
-                    self.stats.peak_usage = @max(self.stats.peak_usage, self.stats.items_in_use);
+                    self.stats.cache_hits += 1;
+                    self.updateAverageWaitTime(start_time);
                     return &item.data;
                 }
             }
 
-            // Grow pool if all items are in use
-            const new_capacity = self.items.len * 2;
-            var new_items = try self.allocator.alloc(PoolItem, new_capacity);
+            self.stats.cache_misses += 1;
 
-            // Copy existing items
-            @memcpy(new_items[0..self.items.len], self.items);
-
-            // Initialize new items
-            for (new_items[self.items.len..]) |*item| {
-                item.* = .{
-                    .data = try self.create_fn(self.allocator),
-                    .in_use = false,
-                };
+            // Check if we can grow the pool
+            if (self.items.len >= self.config.max_size) {
+                // Try to reclaim timed-out items
+                if (self.reclaimTimedOutItems(now)) |item| {
+                    item.in_use = true;
+                    item.last_used = now;
+                    item.use_count += 1;
+                    self.stats.items_in_use += 1;
+                    self.stats.total_acquisitions += 1;
+                    self.updateAverageWaitTime(start_time);
+                    return &item.data;
+                }
+                return error.PoolExhausted;
             }
-
-            // Update pool state
-            self.allocator.free(self.items);
-            self.items = new_items;
-            self.stats.total_items = new_capacity;
+            // Grow pool
+            const new_size = @min(self.config.max_size, @as(usize, @intFromFloat(@as(f32, @floatFromInt(self.items.len)) * self.config.growth_factor)));
+            try self.grow(new_size);
 
             // Use first new item
-            const item = &self.items[self.items.len / 2];
+            const item = &self.items[self.items.len - 1];
             item.in_use = true;
+            item.last_used = now;
+            item.use_count = 1;
             self.stats.items_in_use += 1;
             self.stats.total_acquisitions += 1;
-            self.stats.peak_usage = @max(self.stats.peak_usage, self.stats.items_in_use);
+            self.updateAverageWaitTime(start_time);
 
             return &item.data;
+        }
+
+        fn reclaimTimedOutItems(self: *Self, now: i64) ?*PoolItem {
+            for (self.items) |*item| {
+                if (item.in_use and now - item.last_used > self.config.item_timeout_ms) {
+                    item.in_use = false;
+                    self.stats.items_in_use -= 1;
+                    return item;
+                }
+            }
+            return null;
+        }
+
+        // Update average wait time
+        fn updateAverageWaitTime(self: *Self, start_time: i64) void {
+            const wait_time: u64 = @intCast(std.time.nanoTimestamp() - start_time);
+            const total_acquisitions = self.stats.total_acquisitions;
+            self.stats.average_wait_time_ns = @divTrunc((self.stats.average_wait_time_ns * (total_acquisitions - 1) + wait_time), total_acquisitions);
         }
 
         /// Release an item back to the pool
@@ -123,12 +165,17 @@ pub fn Pool(comptime T: type) type {
             self.mutex.lock();
             defer self.mutex.unlock();
 
-            // Find and release the item
             for (self.items) |*pool_item| {
                 if (&pool_item.data == item) {
                     pool_item.in_use = false;
+                    pool_item.last_used = std.time.timestamp();
                     self.stats.items_in_use -= 1;
                     self.stats.total_releases += 1;
+                    // Check if we should shrink the pool
+                    const usage_ratio: f32 = @as(f32, @floatFromInt(self.stats.items_in_use)) / @as(f32, @floatFromInt(self.items.len));
+                    if (usage_ratio < self.config.shrink_threshold) {
+                        self.shrinkToFit() catch {};
+                    }
                     return;
                 }
             }

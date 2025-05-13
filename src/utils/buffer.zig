@@ -1,6 +1,6 @@
 const std = @import("std");
 const errors = @import("../core/errors.zig");
-pub const BufferError = errors.BufferError;
+
 /// A high-performance circular buffer implementation
 pub const CircularBuffer = struct {
     const Self = @This();
@@ -11,9 +11,19 @@ pub const CircularBuffer = struct {
     write_pos: usize,
     full: bool,
     mutex: std.Thread.Mutex,
+
     compaction_threshold_percent: usize = 75,
     last_compaction: i64 = 0,
     compaction_interval_ms: i64 = 5000,
+
+    total_bytes_written: std.atomic.Value(usize),
+    total_compactions: std.atomic.Value(usize),
+
+    overflow_attempts: std.atomic.Value(usize),
+    underflow_attempts: std.atomic.Value(usize),
+    peak_usage: std.atomic.Value(usize),
+    total_operations: std.atomic.Value(usize),
+    last_operation_timestamp: std.atomic.Value(i64),
 
     pub fn compact(self: *Self) !void {
         self.mutex.lock();
@@ -21,22 +31,39 @@ pub const CircularBuffer = struct {
 
         if (self.isEmpty()) return;
 
-        var temp_buffer = try self.allocator.alloc(u8, self.buffer.len);
+        const current_size = self.len();
+        if (current_size == 0) return;
+
+        // If data is contiguous, no need for temporary buffer
+        if (self.read_pos < self.write_pos) return;
+
+        // Only allocate temporary buffer if data wraps around
+        var temp_buffer = try self.allocator.alloc(u8, current_size);
         defer self.allocator.free(temp_buffer);
 
         var bytes_copied: usize = 0;
-        while (bytes_copied < self.len()) {
-            temp_buffer[bytes_copied] = self.buffer[self.read_pos];
-            self.read_pos = (self.read_pos + 1) % self.buffer.len;
-            bytes_copied += 1;
+
+        // Copy first segment (from read_pos to end)
+        const first_segment = self.buffer[self.read_pos..];
+        @memcpy(temp_buffer[0..first_segment.len], first_segment);
+        bytes_copied += first_segment.len;
+
+        // Copy second segment (from start to write_pos)
+        if (self.write_pos > 0) {
+            const second_segment = self.buffer[0..self.write_pos];
+            @memcpy(temp_buffer[bytes_copied..], second_segment);
+            bytes_copied += second_segment.len;
         }
+
+        // Copy back to main buffer
+        @memcpy(self.buffer[0..bytes_copied], temp_buffer[0..bytes_copied]);
 
         self.read_pos = 0;
         self.write_pos = bytes_copied;
         self.full = false;
 
-        @memcpy(self.buffer[0..bytes_copied], temp_buffer[0..bytes_copied]);
         self.last_compaction = std.time.timestamp();
+        _ = self.total_compactions.fetchAdd(1, .monotonic);
     }
 
     /// Initialize a new circular buffer with the specified size
@@ -49,6 +76,13 @@ pub const CircularBuffer = struct {
             .write_pos = 0,
             .full = false,
             .mutex = std.Thread.Mutex{},
+            .total_bytes_written = std.atomic.Value(usize).init(0),
+            .total_compactions = std.atomic.Value(usize).init(0),
+            .overflow_attempts = std.atomic.Value(usize).init(0),
+            .underflow_attempts = std.atomic.Value(usize).init(0),
+            .peak_usage = std.atomic.Value(usize).init(0),
+            .total_operations = std.atomic.Value(usize).init(0),
+            .last_operation_timestamp = std.atomic.Value(i64).init(std.time.timestamp()),
         };
         return self;
     }
@@ -59,40 +93,78 @@ pub const CircularBuffer = struct {
         self.allocator.destroy(self);
     }
 
+    fn getFragmentationPercent(self: *Self) usize {
+        const fragmented_space = self.getFragmentedSpace();
+        return (fragmented_space * 100) / self.buffer.len;
+    }
+
     /// Write data to the buffer
     pub fn write(self: *Self, data: []const u8) !usize {
         self.mutex.lock();
         defer self.mutex.unlock();
 
+        _ = self.total_operations.fetchAdd(1, .monotonic);
+        _ = self.last_operation_timestamp.store(std.time.timestamp(), .monotonic);
+
         if (data.len > self.capacity()) {
-            return BufferError.BufferOverflow;
+            _ = self.overflow_attempts.fetchAdd(1, .monotonic);
+            return error.BufferOverflow;
         }
 
-        // Check if compaction is needed before writing
-        const fragmented_space = self.getFragmentedSpace();
-        const fragmentation_percent = (fragmented_space * 100) / self.buffer.len;
-        const now = std.time.timestamp();
+        const available_space = self.availableSpace();
+        if (available_space < data.len) {
+            _ = self.overflow_attempts.fetchAdd(1, .monotonic);
 
-        if (fragmentation_percent > self.compaction_threshold_percent and
-            now - self.last_compaction >= @divFloor(self.compaction_interval_ms, 1000))
-        {
-            // Do compaction while holding the current lock
-            try self.compactInternal();
+            // Try compaction first
+            if (self.getFragmentationPercent() > self.compaction_threshold_percent) {
+                try self.compact();
+            }
+
+            // If still not enough space after compaction
+            if (self.availableSpace() < data.len) {
+                return error.BufferFull;
+            }
         }
 
         var bytes_written: usize = 0;
-        for (data) |byte| {
-            if (self.full) {
-                return bytes_written;
-            }
 
-            self.buffer[self.write_pos] = byte;
-            bytes_written += 1;
-            self.write_pos = (self.write_pos + 1) % self.buffer.len;
-            self.full = self.write_pos == self.read_pos;
+        // Optimize for contiguous writes when possible
+        if (self.write_pos + data.len <= self.buffer.len) {
+            // Single copy for contiguous space
+            @memcpy(self.buffer[self.write_pos..][0..data.len], data);
+            bytes_written = data.len;
+            self.write_pos = (self.write_pos + data.len) % self.buffer.len;
+        } else {
+            // Split copy for wrapped writes
+            const first_chunk_size = self.buffer.len - self.write_pos;
+            @memcpy(self.buffer[self.write_pos..], data[0..first_chunk_size]);
+
+            const remaining_size = data.len - first_chunk_size;
+            @memcpy(self.buffer[0..remaining_size], data[first_chunk_size..]);
+
+            bytes_written = data.len;
+            self.write_pos = remaining_size;
         }
 
+        self.full = self.write_pos == self.read_pos;
+        _ = self.total_bytes_written.fetchAdd(bytes_written, .monotonic);
+
+        const current_usage = self.len();
+        const old_peak = self.peak_usage.swap(current_usage, .monotonic);
+        if (current_usage < old_peak) {
+            _ = self.peak_usage.swap(old_peak, .monotonic);
+        }
         return bytes_written;
+    }
+
+    pub fn getStats(self: *Self) BufferStats {
+        return .{
+            .capacity = self.buffer.len,
+            .used_space = self.len(),
+            .total_bytes_written = self.total_bytes_written.load(.acquire),
+            .total_compactions = self.total_compactions.load(.acquire),
+            .fragmentation_percent = self.getFragmentationPercent(),
+        };
     }
 
     fn compactInternal(self: *Self) !void {
@@ -120,10 +192,9 @@ pub const CircularBuffer = struct {
         self.last_compaction = std.time.timestamp();
     }
 
-    // Internal read function that assumes the lock is already held
     fn readInternal(self: *Self, dest: []u8) !usize {
         if (self.isEmpty()) {
-            return BufferError.BufferUnderflow;
+            return error.BufferUnderflow;
         }
 
         var bytes_read: usize = 0;
@@ -137,13 +208,20 @@ pub const CircularBuffer = struct {
         return bytes_read;
     }
 
-    // Helper to calculate fragmented space
-    fn getFragmentedSpace(self: *Self) usize {
-        if (self.isEmpty()) return 0;
-        if (self.write_pos > self.read_pos) {
+    fn availableSpace(self: *Self) usize {
+        if (self.full) return 0;
+        if (self.write_pos >= self.read_pos) {
             return self.buffer.len - (self.write_pos - self.read_pos);
         }
         return self.read_pos - self.write_pos;
+    }
+
+    fn getFragmentedSpace(self: *Self) usize {
+        if (self.full or self.isEmpty()) return 0;
+        if (self.write_pos < self.read_pos) {
+            return self.read_pos - self.write_pos;
+        }
+        return self.buffer.len - (self.write_pos - self.read_pos);
     }
 
     /// Read data from the buffer
@@ -151,8 +229,12 @@ pub const CircularBuffer = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
+        _ = self.total_operations.fetchAdd(1, .monotonic);
+        _ = self.last_operation_timestamp.store(std.time.timestamp(), .monotonic);
+
         if (self.isEmpty()) {
-            return BufferError.BufferUnderflow;
+            _ = self.underflow_attempts.fetchAdd(1, .monotonic);
+            return error.BufferUnderflow;
         }
 
         var bytes_read: usize = 0;
@@ -249,7 +331,7 @@ pub const BufferPool = struct {
             return new_buffer;
         }
 
-        return BufferError.BufferFull;
+        return error.BufferFull;
     }
 
     /// Release a buffer back to the pool
@@ -269,3 +351,106 @@ pub const BufferPool = struct {
         unreachable;
     }
 };
+
+pub const BufferStats = struct {
+    capacity: usize,
+    used_space: usize,
+    total_bytes_written: usize,
+    total_compactions: usize,
+    fragmentation_percent: usize,
+    overflow_attempts: usize,
+    underflow_attempts: usize,
+    average_usage_percent: f32,
+    peak_usage: usize,
+    last_operation_timestamp: i64,
+};
+
+pub const BufferHealth = struct {
+    status: enum {
+        healthy,
+        warning,
+        critical,
+    },
+    issues: std.ArrayList([]const u8),
+    usage_percent: f32,
+    time_since_last_op_ms: i64,
+};
+
+pub fn isHealthy(self: *CircularBuffer) bool {
+    const current_usage = @as(f32, @floatFromInt(self.len())) / @as(f32, @floatFromInt(self.capacity())) * 100.0;
+    const total_ops = self.total_operations.load(.monotonic);
+
+    // Quick health check without allocation
+    if (current_usage > 95) return false;
+    if (total_ops > 0) {
+        const overflow_rate = @as(f32, @floatFromInt(self.overflow_attempts.load(.monotonic))) / @as(f32, @floatFromInt(total_ops));
+        const underflow_rate = @as(f32, @floatFromInt(self.underflow_attempts.load(.monotonic))) / @as(f32, @floatFromInt(total_ops));
+        if (overflow_rate > 0.10 or underflow_rate > 0.10) return false;
+    }
+
+    const time_since_last_op = std.time.timestamp() - self.last_operation_timestamp.load(.monotonic);
+    if (time_since_last_op > 60) return false; // 1 minute inactivity threshold
+
+    return true;
+}
+
+pub fn resetHealthMetrics(self: *CircularBuffer) void {
+    _ = self.overflow_attempts.store(0, .monotonic);
+    _ = self.underflow_attempts.store(0, .monotonic);
+    _ = self.total_operations.store(0, .monotonic);
+    _ = self.peak_usage.store(0, .monotonic);
+    _ = self.last_operation_timestamp.store(std.time.timestamp(), .monotonic);
+}
+
+pub fn getBufferHealth(self: *CircularBuffer, allocator: std.mem.Allocator) !BufferHealth {
+    var health = BufferHealth{
+        .status = .healthy,
+        .issues = std.ArrayList([]const u8).init(allocator),
+        .usage_percent = @as(f32, @floatFromInt(self.len())) / @as(f32, @floatFromInt(self.capacity())) * 100.0,
+        .time_since_last_op_ms = (std.time.timestamp() - self.last_operation_timestamp.load(.monotonic)) * 1000,
+    };
+
+    // Check usage thresholds
+    if (health.usage_percent > 90) {
+        health.status = .warning;
+        try health.issues.append("Buffer usage above 90%");
+    }
+    if (health.usage_percent > 95) {
+        health.status = .critical;
+        try health.issues.append("Buffer usage above 95%");
+    }
+
+    // Check overflow/underflow rates
+    const total_ops = self.total_operations.load(.monotonic);
+    if (total_ops > 0) {
+        const overflow_rate = @as(f32, @floatFromInt(self.overflow_attempts.load(.monotonic))) / @as(f32, @floatFromInt(total_ops));
+        const underflow_rate = @as(f32, @floatFromInt(self.underflow_attempts.load(.monotonic))) / @as(f32, @floatFromInt(total_ops));
+
+        if (overflow_rate > 0.05) {
+            health.status = .warning;
+            try health.issues.append("High overflow attempt rate (>5%)");
+        }
+        if (underflow_rate > 0.05) {
+            health.status = .warning;
+            try health.issues.append("High underflow attempt rate (>5%)");
+        }
+    }
+
+    // Check inactivity
+    if (health.time_since_last_op_ms > 30_000) { // 30 seconds
+        try health.issues.append("Buffer inactive for >30 seconds");
+    }
+
+    // Check fragmentation
+    const frag_percent = self.getFragmentationPercent();
+    if (frag_percent > 50) {
+        health.status = .warning;
+        try health.issues.append("High fragmentation (>50%)");
+    }
+
+    return health;
+}
+
+pub fn deinitBufferHealth(health: *BufferHealth) void {
+    health.issues.deinit();
+}
