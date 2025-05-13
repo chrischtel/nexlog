@@ -1,56 +1,12 @@
 // errors.zig
 const std = @import("std");
 
-pub const LogError = error{
-    BufferFull,
-    InvalidLogLevel,
-    MessageTooLarge,
-    FileLockFailed,
-    FileRotationFailed,
-    InvalidConfiguration,
-    ThreadInitFailed,
-    MetadataError,
-    FormattingError,
-    FilterError,
-    AlreadyInitialized,
-    NotInitialized,
+pub const Error = error{
+    IOError,
+    ConfigError,
+    BufferError,
+    Unexpected,
 };
-
-pub const FileError = error{
-    FileNotFound,
-    PermissionDenied,
-    DirectoryNotFound,
-    DiskFull,
-    RotationLimitReached,
-    InvalidFilePath,
-    LockTimeout,
-};
-
-pub const BufferError = error{
-    BufferOverflow,
-    BufferUnderflow,
-    InvalidAlignment,
-    FlushFailed,
-    CompactionFailed,
-    BufferFull,
-};
-
-pub const ConfigError = error{
-    InvalidLogLevel,
-    InvalidBufferSize,
-    InvalidRotationPolicy,
-    InvalidFilterExpression,
-    InvalidTimeFormat,
-    InvalidPath,
-    ConflictingOptions,
-};
-
-pub const MemoryError = error{
-    OutOfMemory,
-};
-
-/// Comprehensive error set combining all logging-related and memory errors
-pub const Error = LogError || FileError || BufferError || ConfigError || std.fs.File.OpenError || std.fs.File.WriteError || MemoryError;
 
 pub const ErrorContext = struct {
     file: []const u8,
@@ -74,7 +30,7 @@ pub const ErrorContext = struct {
         };
     }
 
-    pub fn format(self: ErrorContext, writer: anytype) !void {
+    pub fn format(self: ErrorContext, writer: anytype) anyerror!void {
         try writer.print(
             "Error[{d}] {s}:{d}: {s} - {s}\n",
             .{
@@ -125,7 +81,7 @@ pub fn makeError(
     return ErrorContext.init(error_type, message, file, line);
 }
 
-pub fn defaultErrorHandler(context: ErrorContext) Error!void {
+pub fn defaultErrorHandler(context: ErrorContext) anyerror!void {
     const stderr = std.io.getStdErr().writer();
     try context.format(stderr);
 }

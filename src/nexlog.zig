@@ -29,7 +29,6 @@ pub const Logger = core.logger.Logger;
 pub const LogLevel = core.types.LogLevel;
 pub const LogConfig = core.config.LogConfig;
 pub const LogMetadata = core.types.LogMetadata;
-pub const LogError = core.errors.LogError;
 
 // Re-export initialization functions
 pub const init = core.init.init;
@@ -44,6 +43,9 @@ pub const CircularBuffer = utils.buffer.CircularBuffer;
 pub const Pool = utils.pool.Pool;
 pub const JsonValue = utils.json.JsonValue;
 pub const JsonError = utils.json.JsonError;
+
+pub const BufferHealth = utils.buffer.BufferHealth;
+pub const BufferStats = utils.buffer.BufferStats;
 
 // Example test
 test "basic log test" {

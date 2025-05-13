@@ -418,6 +418,18 @@ fn benchmarkLoggerIntegration(allocator: std.mem.Allocator) !void {
     try log.log(.info, "User logged in successfully", .{}, null);
 }
 
+fn benchmarkLoggerIntegrationWrapper(allocator: std.mem.Allocator) BenchmarkError!void {
+    benchmarkLoggerIntegration(allocator) catch |err| {
+        return switch (err) {
+            error.IOError => BenchmarkError.FileTooBig,
+            error.ConfigError => BenchmarkError.InvalidConfiguration,
+            error.BufferError => BenchmarkError.BufferFull,
+            error.Unexpected => BenchmarkError.Unexpected,
+            else => BenchmarkError.Unexpected,
+        };
+    };
+}
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -434,7 +446,7 @@ pub fn main() !void {
     try results.append(try runBenchmark(allocator, "Large Fields", iterations / 10, benchmarkLargeFields));
     try results.append(try runBenchmark(allocator, "Many Fields", iterations / 2, benchmarkManyFields));
     try results.append(try runBenchmark(allocator, "With Attributes", iterations, benchmarkWithAttributes));
-    try results.append(try runBenchmark(allocator, "Logger Integration", iterations, benchmarkLoggerIntegration));
+    try results.append(try runBenchmark(allocator, "Logger Integration", iterations, benchmarkLoggerIntegrationWrapper));
 
     // Print results
     printBenchmarkResults(results.items);

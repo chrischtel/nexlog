@@ -78,7 +78,7 @@ pub const Logger = struct {
                     .enable_rotation = config.enable_rotation,
                     .min_level = config.min_level,
                 };
-                var file_handler = try file.FileHandler.init(allocator, file_config);
+                var file_handler = try file.FileHandler.init(allocator, file_config, null);
                 try logger.addHandler(file_handler.toLogHandler());
             }
         }
