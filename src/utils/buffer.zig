@@ -139,12 +139,11 @@ pub const CircularBuffer = struct {
             const first_chunk_size = self.buffer.len - self.write_pos;
             @memcpy(self.buffer[self.write_pos..], data[0..first_chunk_size]);
 
-            // Fix: Calculate remaining data size and ensure we don't overflow
             const remaining_size = data.len - first_chunk_size;
             @memcpy(self.buffer[0..remaining_size], data[first_chunk_size..]);
 
             bytes_written = data.len;
-            self.write_pos = remaining_size; // Fix: Use remaining_size directly
+            self.write_pos = remaining_size;
         }
 
         self.full = self.write_pos == self.read_pos;
