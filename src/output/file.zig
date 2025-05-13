@@ -345,10 +345,7 @@ pub const FileHandler = struct {
                     self.allocator,
                     "{s}.{d}",
                     .{ self.config.path, i },
-                ) catch |err| {
-                    self.handleError(err, "Failed to allocate new path for rotation");
-                    return err;
-                };
+                );
                 defer self.allocator.free(new_path);
 
                 // Try to rename, ignore errors if file doesn't exist
@@ -360,14 +357,6 @@ pub const FileHandler = struct {
                     },
                 };
             }
-
-            // Move current file to .1
-            const backup_path = try std.fmt.allocPrint(
-                self.allocator,
-                "{s}.1",
-                .{self.config.path},
-            );
-            defer self.allocator.free(backup_path);
 
             std.fs.cwd().rename(self.config.path, backup_path) catch |err| switch (err) {
                 error.FileNotFound => {}, // Might happen if log file was deleted
@@ -393,6 +382,7 @@ pub const FileHandler = struct {
                 return err;
             };
             self.current_size.store(0, .release);
+            const timestamp = std.time.timestamp();
             self.config.last_rotation = timestamp;
         }
     }
@@ -403,6 +393,20 @@ pub const FileHandler = struct {
             error.InvalidConfiguration, error.InvalidLogLevel, error.InvalidBufferSize, error.InvalidRotationPolicy, error.InvalidFilterExpression, error.InvalidTimeFormat, error.InvalidPath, error.ConflictingOptions => errors.Error.ConfigError,
             error.FileNotFound, error.PermissionDenied, error.DirectoryNotFound, error.DiskFull, error.RotationLimitReached, error.InvalidFilePath, error.LockTimeout, error.NoSpaceLeft, error.InvalidUtf8, error.DiskQuota, error.FileTooBig, error.InputOutput, error.DeviceBusy, error.InvalidArgument, error.AccessDenied, error.BrokenPipe, error.SystemResources, error.OperationAborted, error.NotOpenForWriting, error.LockViolation, error.WouldBlock, error.ConnectionResetByPeer, error.ProcessNotFound, error.NoDevice, error.SharingViolation, error.PathAlreadyExists, error.PipeBusy, error.NameTooLong, error.InvalidWtf8, error.BadPathName, error.NetworkNotFound, error.AntivirusInterference, error.SymLinkLoop, error.ProcessFdQuotaExceeded, error.SystemFdQuotaExceeded, error.IsDir, error.NotDir, error.FileLocksNotSupported, error.FileBusy, error.FileSystem, error.ConnectionTimedOut, error.NotOpenForReading, error.SocketNotConnected, error.Canceled, error.OutOfMemory => errors.Error.IOError,
             else => errors.Error.Unexpected,
+        };
+    }
+
+    fn shouldRotate(self: *Self) bool {
+        if (!self.config.enable_rotation) return false;
+
+        const current_size = self.current_size.load(.monotonic);
+        const now = std.time.timestamp();
+
+        return switch (self.config.rotation_mode) {
+            .size => current_size >= self.config.max_size,
+            .time => (now - self.config.last_rotation) >= self.config.rotation_interval,
+            .both => current_size >= self.config.max_size or
+                (now - self.config.last_rotation) >= self.config.rotation_interval,
         };
     }
 
