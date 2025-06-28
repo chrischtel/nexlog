@@ -1,4 +1,10 @@
-### v0.6.0 [UNRELEASED] (MMMM DD, YYYY)
+### v0.6.1 (June 28, 2025)
+
+#### Fixed
+- Updated package version metadata in build.zig.zon to match release version
+- Corrected changelog release date formatting
+
+### v0.6.0 (June 28, 2025)
 
 #### Added
 - Automatic metadata capture helpers
