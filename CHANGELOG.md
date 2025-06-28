@@ -7,6 +7,9 @@
 - Comprehensive formatting test example (`formatting_test.zig`)
 
 #### Fixed
+- **Fixed automatic metadata capture helpers to show correct caller source location instead of helper definition location**
+  - Changed API: `nexlog.here(@src())` instead of `nexlog.here()`
+  - Source location now correctly captured from call site, not helper function definition
 - **Fixed ISO8601 timestamp formatting producing invalid output like `[+2022-+1-+1T00:00:00Z]` - now correctly generates `[2022-01-01T00:00:00Z]`**
 - Hostname placeholder implementation for better cross-platform compatibility
 

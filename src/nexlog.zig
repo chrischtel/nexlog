@@ -48,19 +48,24 @@ pub const BufferHealth = utils.buffer.BufferHealth;
 pub const BufferStats = utils.buffer.BufferStats;
 
 // Metadata creation helpers
-/// Create metadata automatically capturing source location
-pub fn here() LogMetadata {
-    return LogMetadata.create(@src());
+// The proper Zig way: users pass @src() explicitly to capture correct location
+
+/// Create metadata from caller's source location
+/// Usage: nexlog.here(@src())
+pub inline fn here(src: std.builtin.SourceLocation) LogMetadata {
+    return LogMetadata.create(src);
 }
 
-/// Create metadata with custom timestamp
-pub fn hereWithTimestamp(timestamp: i64) LogMetadata {
-    return LogMetadata.createWithTimestamp(timestamp, @src());
+/// Create metadata with custom timestamp from caller's source location
+/// Usage: nexlog.hereWithTimestamp(timestamp, @src())
+pub inline fn hereWithTimestamp(timestamp: i64, src: std.builtin.SourceLocation) LogMetadata {
+    return LogMetadata.createWithTimestamp(timestamp, src);
 }
 
-/// Create metadata with custom thread ID
-pub fn hereWithThreadId(thread_id: usize) LogMetadata {
-    return LogMetadata.createWithThreadId(thread_id, @src());
+/// Create metadata with custom thread ID from caller's source location
+/// Usage: nexlog.hereWithThreadId(thread_id, @src())
+pub inline fn hereWithThreadId(thread_id: usize, src: std.builtin.SourceLocation) LogMetadata {
+    return LogMetadata.createWithThreadId(thread_id, src);
 }
 
 // Example test

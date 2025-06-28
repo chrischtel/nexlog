@@ -6,8 +6,8 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Create logger
-    const logger = try nexlog.Logger.init(allocator, .{});
+    // Create logger with debug level enabled
+    const logger = try nexlog.Logger.init(allocator, .{ .min_level = .debug });
     defer logger.deinit();
 
     std.debug.print("=== Before: Manual Metadata Creation ===\n", .{});
@@ -26,13 +26,13 @@ pub fn main() !void {
     std.debug.print("\n=== After: Automatic Metadata Creation ===\n", .{});
 
     // NEW WAY: Automatic metadata capture (much cleaner!)
-    try logger.log(.info, "New way: automatic metadata capture!", .{}, nexlog.here());
+    try logger.log(.info, "New way: automatic metadata capture!", .{}, nexlog.here(@src()));
 
     // With custom timestamp
-    try logger.log(.warn, "Custom timestamp example", .{}, nexlog.hereWithTimestamp(1640995200));
+    try logger.log(.warn, "Custom timestamp example", .{}, nexlog.hereWithTimestamp(1640995200, @src()));
 
     // With custom thread ID
-    try logger.log(.debug, "Custom thread ID example", .{}, nexlog.hereWithThreadId(12345));
+    try logger.log(.debug, "Custom thread ID example", .{}, nexlog.hereWithThreadId(12345, @src()));
 
     // Minimal metadata (no source location)
     try logger.log(.err, "Minimal metadata example", .{}, nexlog.LogMetadata.minimal());
@@ -40,10 +40,10 @@ pub fn main() !void {
     std.debug.print("\n=== Convenience Methods with Auto-Metadata ===\n", .{});
 
     // We can also use the convenience methods with automatic metadata
-    logger.info("Convenience method with auto-metadata", .{}, nexlog.here());
-    logger.debug("Debug message with auto-metadata", .{}, nexlog.here());
-    logger.warn("Warning with auto-metadata", .{}, nexlog.here());
-    logger.err("Error with auto-metadata", .{}, nexlog.here());
+    logger.info("Convenience method with auto-metadata", .{}, nexlog.here(@src()));
+    logger.debug("Debug message with auto-metadata", .{}, nexlog.here(@src()));
+    logger.warn("Warning with auto-metadata", .{}, nexlog.here(@src()));
+    logger.err("Error with auto-metadata", .{}, nexlog.here(@src()));
 
     try logger.flush();
 }
