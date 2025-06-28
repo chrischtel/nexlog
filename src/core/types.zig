@@ -36,12 +36,55 @@ pub const Variable = struct {
     value: []const u8,
 };
 
+pub const LogContext = struct {
+    // Request tracking
+    request_id: ?[]const u8 = null, // Optional request ID for tracing
+    correlation_id: ?[]const u8 = null, // Optional correlation ID for linking events
+    trace_id: ?[]const u8 = null, // Optional trace ID for distributed tracing
+    span_id: ?[]const u8 = null, // Optional span ID for distributed tracing
+
+    // User/session tracking
+    user_id: ?[]const u8 = null, // Optional user ID for user-specific logs
+    session_id: ?[]const u8 = null, // Optional session ID for session-specific logs
+
+    // Operation tracking
+    operation: ?[]const u8 = null, // Optional operation name for context
+    function: ?[]const u8 = null, // Optional function name for context
+
+    // Call chain tracking
+    call_depth: u32 = 0, // Depth of the call chain
+    parent_function: ?[]const u8 = null, // Optional parent function name for context
+
+    /// Create a basic context with just request ID
+    pub fn withRequestId(request_id: []const u8) LogContext {
+        return LogContext{
+            .request_id = request_id,
+        };
+    }
+
+    /// Create context with request ID and operation
+    pub fn withOperation(request_id: []const u8, operation: []const u8) LogContext {
+        return LogContext{
+            .request_id = request_id,
+            .operation = operation,
+        };
+    }
+
+    /// Add correlation ID to existing context
+    pub fn withCorrelation(self: LogContext, correlation_id: []const u8) LogContext {
+        var new_context = self;
+        new_context.correlation_id = correlation_id;
+        return new_context;
+    }
+};
+
 pub const LogMetadata = struct {
     timestamp: i64,
     thread_id: usize,
     file: []const u8,
     line: u32,
     function: []const u8,
+    context: ?LogContext = null, // Optional context for additional metadata
 
     /// Create metadata with automatic source location capture
     pub fn create(src: std.builtin.SourceLocation) LogMetadata {
