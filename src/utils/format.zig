@@ -670,7 +670,7 @@ pub fn hostnamePlaceholder(
     _ = level;
     _ = message;
     _ = metadata;
-    var buffer: [std.os.HOST_NAME_MAX]u8 = undefined;
-    const hostname = try std.os.gethostname(&buffer);
+    var buffer: [256]u8 = undefined; // Use a fixed size instead of HOST_NAME_MAX
+    const hostname = std.posix.gethostname(&buffer) catch "unknown";
     return allocator.dupe(u8, hostname);
 }

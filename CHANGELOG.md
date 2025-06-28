@@ -1,7 +1,18 @@
-### v0.6.0-beta.1 (June 28, 2025)
-- Added automatic metadata capture helpers
+### v0.6.0 [UNRELEASED] (MMMM DD, YYYY)
+
+#### Added
+- Automatic metadata capture helpers
   - New `LogMetadata.create()` function with automatic source location capture using `@src()` builtin
   - Added convenience functions `here()`, `hereWithTimestamp()`, and `hereWithThreadId()` for ergonomic metadata creation
+- Comprehensive formatting test example (`formatting_test.zig`)
+
+#### Fixed
+- Hostname placeholder implementation for better cross-platform compatibility
+
+#### Changed
+- Enhanced custom formatting system validation
+- Verified custom template functionality with user-defined formats
+- Confirmed support for multiple level formats (upper, lower, short variants)
 
 ### v0.5.0-beta.1 (April 10, 2025)
 - Added structured logging support
