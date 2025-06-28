@@ -72,6 +72,7 @@ pub fn build(b: *std.Build) void {
         .{ .file = "examples/benchmark.zig", .name = "bench" },
         .{ .file = "examples/metadata_ergonomics.zig", .name = "example_7" },
         .{ .file = "examples/formatting_test.zig", .name = "example_8" },
+        .{ .file = "examples/context_tracking.zig", .name = "example_9" },
     };
 
     const all_examples_step = b.step("all-examples", "Run all examples (for CI)");
