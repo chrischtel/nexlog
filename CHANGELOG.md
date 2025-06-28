@@ -1,3 +1,8 @@
+### v0.6.0-beta.1 (June 28, 2025)
+- Added automatic metadata capture helpers
+  - New `LogMetadata.create()` function with automatic source location capture using `@src()` builtin
+  - Added convenience functions `here()`, `hereWithTimestamp()`, and `hereWithThreadId()` for ergonomic metadata creation
+
 ### v0.5.0-beta.1 (April 10, 2025)
 - Added structured logging support
   - New `StructuredField` and `FieldValue` types for type-safe structured data

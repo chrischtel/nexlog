@@ -42,7 +42,57 @@ pub const LogMetadata = struct {
     file: []const u8,
     line: u32,
     function: []const u8,
+
+    /// Create metadata with automatic source location capture
+    pub fn create(src: std.builtin.SourceLocation) LogMetadata {
+        return LogMetadata{
+            .timestamp = std.time.timestamp(),
+            .thread_id = getCurrentThreadId(),
+            .file = src.file,
+            .line = src.line,
+            .function = src.fn_name,
+        };
+    }
+
+    /// Create metadata with custom timestamp but automatic source location
+    pub fn createWithTimestamp(timestamp: i64, src: std.builtin.SourceLocation) LogMetadata {
+        return LogMetadata{
+            .timestamp = timestamp,
+            .thread_id = getCurrentThreadId(),
+            .file = src.file,
+            .line = src.line,
+            .function = src.fn_name,
+        };
+    }
+
+    /// Create metadata with custom thread ID but automatic source location
+    pub fn createWithThreadId(thread_id: usize, src: std.builtin.SourceLocation) LogMetadata {
+        return LogMetadata{
+            .timestamp = std.time.timestamp(),
+            .thread_id = thread_id,
+            .file = src.file,
+            .line = src.line,
+            .function = src.fn_name,
+        };
+    }
+
+    /// Create minimal metadata (just timestamp and thread)
+    pub fn minimal() LogMetadata {
+        return LogMetadata{
+            .timestamp = std.time.timestamp(),
+            .thread_id = getCurrentThreadId(),
+            .file = "",
+            .line = 0,
+            .function = "",
+        };
+    }
 };
+
+/// Helper function to get current thread ID
+fn getCurrentThreadId() usize {
+    // Get the current thread ID as a u32 and convert to usize
+    return @as(usize, std.Thread.getCurrentId());
+}
 
 /// Types of recognized patterns
 pub const PatternType = enum {
