@@ -4,7 +4,7 @@ const types = @import("types.zig");
 /// Thread-local context storage for logging
 pub const ContextManager = struct {
     // Use a mutex-protected HashMap to store per-thread context
-    var context_map: std.HashMap(u32, types.LogContext, std.HashMap.DefaultContext(u32), std.HashMap.default_max_load_percentage) = undefined;
+    var context_map: std.HashMap(u32, types.LogContext, std.hash_map.DefaultContext(u32), std.hash_map.default_max_load_percentage) = undefined;
     var context_mutex: std.Thread.Mutex = std.Thread.Mutex{};
     var initialized: bool = false;
 
@@ -14,7 +14,7 @@ pub const ContextManager = struct {
         defer context_mutex.unlock();
 
         if (!initialized) {
-            context_map = std.HashMap(u32, types.LogContext, std.HashMap.DefaultContext(u32), std.HashMap.default_max_load_percentage).init(allocator);
+            context_map = std.HashMap(u32, types.LogContext, std.hash_map.DefaultContext(u32), std.hash_map.default_max_load_percentage).init(allocator);
             initialized = true;
         }
     }

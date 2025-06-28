@@ -129,6 +129,18 @@ pub const LogMetadata = struct {
             .function = "",
         };
     }
+
+    /// Create metadata with context from ContextManager
+    pub fn createWithContext(src: std.builtin.SourceLocation, context: ?LogContext) LogMetadata {
+        return LogMetadata{
+            .timestamp = std.time.timestamp(),
+            .thread_id = getCurrentThreadId(),
+            .file = src.file,
+            .line = src.line,
+            .function = src.fn_name,
+            .context = context,
+        };
+    }
 };
 
 /// Helper function to get current thread ID

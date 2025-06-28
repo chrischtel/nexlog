@@ -7,6 +7,7 @@ pub const core = struct {
     pub const init = @import("core/init.zig");
     pub const errors = @import("core/errors.zig");
     pub const types = @import("core/types.zig");
+    pub const context = @import("core/context.zig");
 };
 
 pub const utils = struct {
@@ -29,6 +30,8 @@ pub const Logger = core.logger.Logger;
 pub const LogLevel = core.types.LogLevel;
 pub const LogConfig = core.config.LogConfig;
 pub const LogMetadata = core.types.LogMetadata;
+pub const LogContext = core.types.LogContext;
+pub const ContextManager = core.context.ContextManager;
 
 // Re-export initialization functions
 pub const init = core.init.init;
@@ -66,6 +69,32 @@ pub inline fn hereWithTimestamp(timestamp: i64, src: std.builtin.SourceLocation)
 /// Usage: nexlog.hereWithThreadId(thread_id, @src())
 pub inline fn hereWithThreadId(thread_id: usize, src: std.builtin.SourceLocation) LogMetadata {
     return LogMetadata.createWithThreadId(thread_id, src);
+}
+
+// Context tracking helpers
+/// Create metadata with automatic context from ContextManager
+/// Usage: nexlog.hereWithContext(@src())
+pub inline fn hereWithContext(src: std.builtin.SourceLocation) LogMetadata {
+    const context = ContextManager.getContext();
+    return LogMetadata.createWithContext(src, context);
+}
+
+/// Set request context for current thread
+/// Usage: nexlog.setRequestContext("req-12345", "user_login")
+pub fn setRequestContext(request_id: []const u8, operation: ?[]const u8) void {
+    ContextManager.setRequestContext(request_id, operation);
+}
+
+/// Add correlation ID to existing context
+/// Usage: nexlog.correlate("corr-67890")
+pub fn correlate(correlation_id: []const u8) void {
+    ContextManager.addCorrelation(correlation_id);
+}
+
+/// Clear context for current thread
+/// Usage: nexlog.clearContext()
+pub fn clearContext() void {
+    ContextManager.clearContext();
 }
 
 // Example test
