@@ -571,27 +571,56 @@ pub const Formatter = struct {
             .iso8601 => {
                 // Convert unix timestamp to ISO 8601 format
                 const unix_timestamp = @as(i64, @intCast(timestamp));
-                const epoch_seconds = @divFloor(unix_timestamp, 1000);
-                const ms = @mod(unix_timestamp, 1000);
 
-                // Convert to broken down time
-                var timer = try std.time.Timer.start();
+                // Convert to epoch seconds (assuming input is already in seconds)
+                const epoch_seconds = unix_timestamp;
+
+                // Calculate days since Unix epoch (1970-01-01)
                 const epoch_day = @divFloor(epoch_seconds, 86400);
                 const day_seconds = @mod(epoch_seconds, 86400);
 
-                // Use integer division instead of floating point
-                // 146097 days = 400 years
-                const year_day = @as(u16, @intCast(@divFloor(epoch_day + 719468, 146097) * 400));
-                const year = 1970 + year_day;
+                // Calculate year (simplified algorithm)
+                // Days since 1970-01-01
+                var days_remaining = epoch_day;
+                var year: u32 = 1970;
 
+                // Handle leap years properly
+                while (days_remaining >= 365) {
+                    const is_leap = (@rem(year, 4) == 0 and @rem(year, 100) != 0) or (@rem(year, 400) == 0);
+                    const year_days: i64 = if (is_leap) 366 else 365;
+                    if (days_remaining >= year_days) {
+                        days_remaining -= year_days;
+                        year += 1;
+                    } else {
+                        break;
+                    }
+                }
+
+                // Calculate month and day (simplified)
+                const is_leap_year = (@rem(year, 4) == 0 and @rem(year, 100) != 0) or (@rem(year, 400) == 0);
+                const days_in_month = [_]i64{ 31, if (is_leap_year) 29 else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+
+                var month: u32 = 1;
+                var day: u32 = @intCast(days_remaining + 1);
+
+                for (days_in_month) |month_days| {
+                    if (day > @as(u32, @intCast(month_days))) {
+                        day -= @as(u32, @intCast(month_days));
+                        month += 1;
+                    } else {
+                        break;
+                    }
+                }
+
+                // Calculate time components
                 const hour = @as(u8, @intCast(@divFloor(day_seconds, 3600)));
                 const minute = @as(u8, @intCast(@mod(@divFloor(day_seconds, 60), 60)));
                 const second = @as(u8, @intCast(@mod(day_seconds, 60)));
 
                 try std.fmt.format(
                     result.writer(),
-                    "{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}.{d:0>3}Z",
-                    .{ year, timer.read(), timer.lap(), hour, minute, second, ms },
+                    "{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}Z",
+                    .{ year, month, day, hour, minute, second },
                 );
             },
             .custom => {

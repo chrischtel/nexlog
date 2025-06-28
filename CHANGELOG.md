@@ -7,6 +7,7 @@
 - Comprehensive formatting test example (`formatting_test.zig`)
 
 #### Fixed
+- **Fixed ISO8601 timestamp formatting producing invalid output like `[+2022-+1-+1T00:00:00Z]` - now correctly generates `[2022-01-01T00:00:00Z]`**
 - Hostname placeholder implementation for better cross-platform compatibility
 
 #### Changed
