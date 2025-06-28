@@ -7,6 +7,10 @@
 
 ---
 
+> **Note:** This project is currently in active development and may undergo significant changes. Please check the [CHANGELOG](./CHANGELOG.md) for the latest updates.
+
+`Supports Zig 0.14 and 0.15.0-dev.877+0adcfd60f`
+
 ## Table of Contents
 
 - [Features](#features)
