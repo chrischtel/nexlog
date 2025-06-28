@@ -10,8 +10,14 @@ pub fn main() !void {
     nexlog.ContextManager.init(allocator);
     defer nexlog.ContextManager.deinit();
 
-    // Initialize logger
-    const logger = try nexlog.Logger.init(allocator, .{});
+    // Create logger with context-aware template
+    const config = nexlog.LogConfig{
+        .format_config = .{
+            .template = "[{timestamp}] {color}[{level}]{reset} [{request_id}] [{operation}] {function}:{line} - {message}",
+            .use_color = true,
+        },
+    };
+    const logger = try nexlog.Logger.init(allocator, config);
     defer logger.deinit();
 
     // Demo 1: Basic request tracking

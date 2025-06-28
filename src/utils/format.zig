@@ -59,6 +59,15 @@ pub const PlaceholderType = enum {
     function,
     color,
     reset,
+    // Context placeholders
+    request_id,
+    correlation_id,
+    trace_id,
+    span_id,
+    user_id,
+    session_id,
+    operation,
+    component,
     custom,
 };
 
@@ -200,6 +209,16 @@ pub const Formatter = struct {
         if (std.mem.eql(u8, name, "color")) return .color;
         if (std.mem.eql(u8, name, "reset")) return .reset;
 
+        // Context placeholders
+        if (std.mem.eql(u8, name, "request_id")) return .request_id;
+        if (std.mem.eql(u8, name, "correlation_id")) return .correlation_id;
+        if (std.mem.eql(u8, name, "trace_id")) return .trace_id;
+        if (std.mem.eql(u8, name, "span_id")) return .span_id;
+        if (std.mem.eql(u8, name, "user_id")) return .user_id;
+        if (std.mem.eql(u8, name, "session_id")) return .session_id;
+        if (std.mem.eql(u8, name, "operation")) return .operation;
+        if (std.mem.eql(u8, name, "component")) return .component;
+
         // Check for custom placeholder
         if (self.config.custom_handlers) |handlers| {
             if (handlers.contains(name)) {
@@ -261,7 +280,61 @@ pub const Formatter = struct {
             .function => if (metadata) |m| try result.appendSlice(m.function),
             .color => if (self.config.use_color) try result.appendSlice(level.toColor()),
             .reset => if (self.config.use_color) try result.appendSlice("\x1b[0m"),
+
+            // Context placeholders
+            .request_id => try self.formatContextField(result, metadata, "request_id"),
+            .correlation_id => try self.formatContextField(result, metadata, "correlation_id"),
+            .trace_id => try self.formatContextField(result, metadata, "trace_id"),
+            .span_id => try self.formatContextField(result, metadata, "span_id"),
+            .user_id => try self.formatContextField(result, metadata, "user_id"),
+            .session_id => try self.formatContextField(result, metadata, "session_id"),
+            .operation => try self.formatContextField(result, metadata, "operation"),
+            .component => try self.formatContextField(result, metadata, "component"),
+
             .custom => try self.formatCustomPlaceholder(result, placeholder, level, message, metadata),
+        }
+    }
+
+    /// Helper function to format context fields
+    fn formatContextField(
+        self: *Formatter,
+        result: *std.ArrayList(u8),
+        metadata: ?types.LogMetadata,
+        field_name: []const u8,
+    ) !void {
+        _ = self; // suppress unused parameter warning
+
+        if (metadata) |m| {
+            if (m.context) |context| {
+                const field_value = if (std.mem.eql(u8, field_name, "request_id"))
+                    context.request_id
+                else if (std.mem.eql(u8, field_name, "correlation_id"))
+                    context.correlation_id
+                else if (std.mem.eql(u8, field_name, "trace_id"))
+                    context.trace_id
+                else if (std.mem.eql(u8, field_name, "span_id"))
+                    context.span_id
+                else if (std.mem.eql(u8, field_name, "user_id"))
+                    context.user_id
+                else if (std.mem.eql(u8, field_name, "session_id"))
+                    context.session_id
+                else if (std.mem.eql(u8, field_name, "operation"))
+                    context.operation
+                else if (std.mem.eql(u8, field_name, "component"))
+                    context.function // Map component to function field
+                else
+                    null;
+
+                if (field_value) |value| {
+                    try result.appendSlice(value);
+                } else {
+                    try result.appendSlice("-"); // Default placeholder for missing values
+                }
+            } else {
+                try result.appendSlice("-"); // No context available
+            }
+        } else {
+            try result.appendSlice("-"); // No metadata available
         }
     }
 

@@ -1,3 +1,26 @@
+### v0.7.0 (XXXX XX, 2025)
+
+#### Added
+- **Context Tracking System**
+  - New `LogContext` struct for request/correlation/trace tracking
+  - Thread-safe `ContextManager` for managing context across function calls
+  - Context inheritance automatically flows through nested function calls
+  - Support for request IDs, correlation IDs, trace IDs, and operation names
+- **Enhanced Template System**
+  - Added context placeholders: `{request_id}`, `{correlation_id}`, `{trace_id}`, `{operation}`
+  - Context data automatically included in log output when available
+  - Backwards compatible with existing templates
+- **New Context API Functions**
+  - `setRequestContext(request_id, operation)` for setting request-level context
+  - `correlate(correlation_id)` for adding correlation tracking
+  - `clearContext()` for cleaning up thread-local context
+  - `hereWithContext(@src())` for context-aware logging with source location
+- **Context Tracking Example**
+  - Comprehensive `context_tracking.zig` example demonstrating request flows
+  - Shows context inheritance across function boundaries
+  - Demonstrates correlation ID usage for external service calls
+
+
 ### v0.6.1 (June 28, 2025)
 
 #### Fixed
