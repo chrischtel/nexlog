@@ -82,26 +82,18 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Initialize logger
-    var builder = nexlog.LogBuilder.init();
-    try builder
-        .setMinLevel(.debug)
-        .enableColors(true)
-        .enableFileLogging(true, "logs/app.log")
-        .build(allocator);
-    defer nexlog.deinit();
+    // Simple logger initialization with minimal config
+    const logger = try nexlog.Logger.init(allocator, .{});
+    defer logger.deinit();
 
-    // Get the default logger
-    const logger = nexlog.getDefaultLogger() orelse return error.LoggerNotInitialized;
-
-    // Log messages
-    logger.info("Application starting", .{}, null);
-    logger.debug("Debug information", .{}, null);
-    logger.warn("Warning message", .{}, null);
-    logger.err("Error occurred", .{}, null);
+    // Basic logging - this is what most users want
+    logger.info("Application starting", .{}, nexlog.here(@src()));
+    logger.debug("Initializing subsystems", .{}, nexlog.here(@src()));
+    logger.info("Processing started", .{}, nexlog.here(@src()));
+    logger.warn("Resource usage high", .{}, nexlog.here(@src()));
+    logger.info("Application shutdown complete", .{}, nexlog.here(@src()));
 }
 ```
-
 ---
 
 ## Examples

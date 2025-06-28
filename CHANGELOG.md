@@ -5,6 +5,10 @@
   - New `LogMetadata.create()` function with automatic source location capture using `@src()` builtin
   - Added convenience functions `here()`, `hereWithTimestamp()`, and `hereWithThreadId()` for ergonomic metadata creation
 - Comprehensive formatting test example (`formatting_test.zig`)
+- **documentation suite**
+  - Configuration reference with all available options
+  - Custom formatting guide with templates and placeholders
+  - Complete API reference documentation
 
 #### Fixed
 - **Fixed automatic metadata capture helpers to show correct caller source location instead of helper definition location**
