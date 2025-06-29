@@ -106,6 +106,13 @@ pub const FormatConfig = struct {
     include_level_in_structured: bool = true,
     custom_field_separator: ?[]const u8 = null,
     custom_key_value_separator: ?[]const u8 = null,
+    
+    /// Stack buffer size for avoiding heap allocations on common log sizes
+    /// Default 1KB should handle most log entries without heap allocation
+    stack_buffer_size: usize = 1024,
+    
+    /// Stack buffer size for structured logs (typically larger)
+    structured_stack_buffer_size: usize = 2048,
 };
 
 /// Function type for custom placeholder handlers
@@ -235,11 +242,62 @@ pub const Formatter = struct {
         message: []const u8,
         metadata: ?types.LogMetadata,
     ) ![]const u8 {
-        var result = std.ArrayList(u8).init(self.allocator);
-        errdefer result.deinit();
+        // Use a reasonable fixed stack buffer size that should handle most logs
+        // Users can configure larger sizes via formatWithBuffer() if needed
+        var stack_buffer: [1024]u8 = undefined;
+        return self.formatWithBuffer(&stack_buffer, level, message, metadata);
+    }
 
+    /// Format with a provided buffer, falling back to heap if buffer is too small
+    pub fn formatWithBuffer(
+        self: *Formatter,
+        buffer: []u8,
+        level: types.LogLevel,
+        message: []const u8,
+        metadata: ?types.LogMetadata,
+    ) ![]const u8 {
+        var fba = std.heap.FixedBufferAllocator.init(buffer);
+        const stack_allocator = fba.allocator();
+        
+        var result = std.ArrayList(u8).init(stack_allocator);
         var last_pos: usize = 0;
 
+        // Format using stack buffer
+        const format_result = blk: {
+            for (self.placeholder_cache.items) |placeholder| {
+                // Add text before placeholder
+                result.appendSlice(self.config.template[last_pos..placeholder.start]) catch break :blk null;
+
+                // Format placeholder
+                self.formatPlaceholder(
+                    &result,
+                    placeholder,
+                    level,
+                    message,
+                    metadata,
+                ) catch break :blk null;
+
+                last_pos = placeholder.end;
+            }
+
+            // Add remaining text after last placeholder
+            result.appendSlice(self.config.template[last_pos..]) catch break :blk null;
+            
+            // Success! Return stack-allocated result
+            break :blk result.items;
+        };
+
+        if (format_result) |stack_result| {
+            // Stack allocation succeeded, copy to owned slice
+            return self.allocator.dupe(u8, stack_result);
+        }
+
+        // Stack buffer too small, fall back to heap allocation
+        result.deinit(); // Clean up failed stack attempt
+        result = std.ArrayList(u8).init(self.allocator);
+        errdefer result.deinit();
+
+        last_pos = 0;
         for (self.placeholder_cache.items) |placeholder| {
             // Add text before placeholder
             try result.appendSlice(self.config.template[last_pos..placeholder.start]);
@@ -345,7 +403,45 @@ pub const Formatter = struct {
         fields: []const StructuredField,
         metadata: ?types.LogMetadata,
     ) ![]const u8 {
-        var result = std.ArrayList(u8).init(self.allocator);
+        // Use a larger stack buffer for structured logs (JSON can be verbose)
+        var stack_buffer: [2048]u8 = undefined;
+        return self.formatStructuredWithBuffer(&stack_buffer, level, message, fields, metadata);
+    }
+
+    /// Format structured with a provided buffer, falling back to heap if buffer is too small
+    pub fn formatStructuredWithBuffer(
+        self: *Formatter,
+        buffer: []u8,
+        level: types.LogLevel,
+        message: []const u8,
+        fields: []const StructuredField,
+        metadata: ?types.LogMetadata,
+    ) ![]const u8 {
+        var fba = std.heap.FixedBufferAllocator.init(buffer);
+        const stack_allocator = fba.allocator();
+        
+        var result = std.ArrayList(u8).init(stack_allocator);
+
+        // Format using stack buffer
+        const format_result = blk: {
+            switch (self.config.structured_format) {
+                .json => self.formatStructuredJson(&result, level, message, fields, metadata) catch break :blk null,
+                .logfmt => self.formatStructuredLogfmt(&result, level, message, fields, metadata) catch break :blk null,
+                .custom => self.formatStructuredCustom(&result, level, message, fields, metadata) catch break :blk null,
+            }
+            
+            // Success! Return stack-allocated result
+            break :blk result.items;
+        };
+
+        if (format_result) |stack_result| {
+            // Stack allocation succeeded, copy to owned slice
+            return self.allocator.dupe(u8, stack_result);
+        }
+
+        // Stack buffer too small, fall back to heap allocation
+        result.deinit(); // Clean up failed stack attempt
+        result = std.ArrayList(u8).init(self.allocator);
         errdefer result.deinit();
 
         switch (self.config.structured_format) {

@@ -9,6 +9,10 @@
   - `hereWithContext(@src())` for context-aware logging
   - Example in `context_tracking.zig`
 
+### Performance
+- **Major performance boost**: Stack buffer optimization eliminates heap allocations for common log sizes, achieving 63% improvement in JSON formatting (27K→44K logs/s)
+  - small performance impact on other formats
+
 
 ### v0.6.1 (June 28, 2025)
 
