@@ -106,11 +106,11 @@ pub const FormatConfig = struct {
     include_level_in_structured: bool = true,
     custom_field_separator: ?[]const u8 = null,
     custom_key_value_separator: ?[]const u8 = null,
-    
+
     /// Stack buffer size for avoiding heap allocations on common log sizes
     /// Default 1KB should handle most log entries without heap allocation
     stack_buffer_size: usize = 1024,
-    
+
     /// Stack buffer size for structured logs (typically larger)
     structured_stack_buffer_size: usize = 2048,
 };
@@ -258,7 +258,7 @@ pub const Formatter = struct {
     ) ![]const u8 {
         var fba = std.heap.FixedBufferAllocator.init(buffer);
         const stack_allocator = fba.allocator();
-        
+
         var result = std.ArrayList(u8).init(stack_allocator);
         var last_pos: usize = 0;
 
@@ -282,7 +282,7 @@ pub const Formatter = struct {
 
             // Add remaining text after last placeholder
             result.appendSlice(self.config.template[last_pos..]) catch break :blk null;
-            
+
             // Success! Return stack-allocated result
             break :blk result.items;
         };
@@ -419,7 +419,7 @@ pub const Formatter = struct {
     ) ![]const u8 {
         var fba = std.heap.FixedBufferAllocator.init(buffer);
         const stack_allocator = fba.allocator();
-        
+
         var result = std.ArrayList(u8).init(stack_allocator);
 
         // Format using stack buffer
@@ -429,7 +429,7 @@ pub const Formatter = struct {
                 .logfmt => self.formatStructuredLogfmt(&result, level, message, fields, metadata) catch break :blk null,
                 .custom => self.formatStructuredCustom(&result, level, message, fields, metadata) catch break :blk null,
             }
-            
+
             // Success! Return stack-allocated result
             break :blk result.items;
         };

@@ -13,6 +13,12 @@
 - **Major performance boost**: Stack buffer optimization eliminates heap allocations for common log sizes, achieving 63% improvement in JSON formatting (27K→44K logs/s)
   - small performance impact on other formats
 
+#### Deprecated
+- Deprecated `NetworkHandler` and `NetworkOutput` APIs (On Hold for now)
+  - **Note**: Network output is highly experimental and not tested in production environments
+  - Use `FileHandler` or custom handlers for reliable logging
+  - **Future**: Will be thoroughly tested, evolved, and stabilized in upcoming versions
+
 
 ### v0.6.1 (June 28, 2025)
 

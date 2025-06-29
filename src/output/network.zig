@@ -5,6 +5,10 @@ const buffer = @import("../utils/buffer.zig");
 const expect = std.testing.expect;
 const handlers = @import("handlers.zig");
 
+// DEPRECATED: NetworkHandler is highly experimental and not production-ready.
+// This feature will be thoroughly tested, evolved, and stabilized in future versions.
+// For now, use FileHandler or custom handlers for reliable logging in production.
+
 pub const NetworkEndpoint = struct {
     host: []const u8,
     port: u16,
