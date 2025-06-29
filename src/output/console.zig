@@ -11,6 +11,10 @@ pub const ConsoleConfig = struct {
     show_source_location: bool = true,
     show_function: bool = false,
     show_thread_id: bool = false,
+
+    /// Use fast path optimization for high-performance logging
+    /// Disables some formatting features but significantly faster
+    fast_mode: bool = false,
 };
 
 pub const ConsoleHandler = struct {
@@ -42,48 +46,87 @@ pub const ConsoleHandler = struct {
             return;
         }
 
-        const writer = if (self.config.use_stderr)
+        // Ultra-fast mode: minimal formatting for maximum throughput
+        if (self.config.fast_mode) {
+            const final_writer = if (self.config.use_stderr)
+                std.io.getStdErr().writer()
+            else
+                std.io.getStdOut().writer();
+
+            const timestamp = if (metadata) |m| m.timestamp else std.time.timestamp();
+            try final_writer.print("[{d}] {s}\n", .{ timestamp, message });
+            return;
+        }
+
+        // Use stack buffer for common case to avoid allocation
+        var buffer: [2048]u8 = undefined;
+        var fba = std.heap.FixedBufferAllocator.init(&buffer);
+        const temp_allocator = fba.allocator();
+
+        var output = std.ArrayList(u8).init(temp_allocator);
+        const writer = output.writer();
+
+        // Pre-calculate timestamp once
+        const timestamp = if (metadata) |m| m.timestamp else std.time.timestamp();
+
+        // Fast path: Simple format without metadata
+        if (metadata == null or (!self.config.show_source_location and !self.config.show_function and !self.config.show_thread_id)) {
+            if (self.config.enable_colors) {
+                try writer.print("{s}[{d}] [{s}]\x1b[0m {s}\n", .{
+                    level.toColor(),
+                    timestamp,
+                    level.toString(),
+                    message,
+                });
+            } else {
+                try writer.print("[{d}] [{s}] {s}\n", .{
+                    timestamp,
+                    level.toString(),
+                    message,
+                });
+            }
+        } else {
+            // Full format with metadata
+            if (self.config.enable_colors) {
+                try writer.print("{s}[{d}] [{s}]\x1b[0m", .{
+                    level.toColor(),
+                    timestamp,
+                    level.toString(),
+                });
+            } else {
+                try writer.print("[{d}] [{s}]", .{
+                    timestamp,
+                    level.toString(),
+                });
+            }
+
+            // Add optional metadata components in one pass
+            if (metadata) |m| {
+                if (self.config.show_source_location) {
+                    // Cache basename to avoid repeated path parsing
+                    const filename = std.fs.path.basename(m.file);
+                    try writer.print(" [{s}:{d}]", .{ filename, m.line });
+                }
+
+                if (self.config.show_function) {
+                    try writer.print(" [{s}]", .{m.function});
+                }
+
+                if (self.config.show_thread_id) {
+                    try writer.print(" [tid:{d}]", .{m.thread_id});
+                }
+            }
+
+            try writer.print(" {s}\n", .{message});
+        }
+
+        // Single write to output stream
+        const final_writer = if (self.config.use_stderr)
             std.io.getStdErr().writer()
         else
             std.io.getStdOut().writer();
 
-        // Display more metadata information according to configuration
-        if (self.config.enable_colors) {
-            try writer.print("{s}", .{level.toColor()});
-        }
-
-        // Display standard timestamp & level info
-        const timestamp = if (metadata) |m| m.timestamp else std.time.timestamp();
-        try writer.print("[{d}] ", .{timestamp});
-
-        // Print level
-        if (self.config.enable_colors) {
-            try writer.print("[{s}]", .{level.toString()});
-            try writer.print("\x1b[0m ", .{}); // Reset color
-        } else {
-            try writer.print("[{s}] ", .{level.toString()});
-        }
-
-        // Include file and line information if available
-        if (metadata != null and self.config.show_source_location) {
-            const file = metadata.?.file;
-            // Get just the filename without the path
-            const filename = std.fs.path.basename(file);
-            try writer.print("[{s}:{d}] ", .{ filename, metadata.?.line });
-        }
-
-        // Include function name if available
-        if (metadata != null and self.config.show_function) {
-            try writer.print("[{s}] ", .{metadata.?.function});
-        }
-
-        // Include thread ID if available
-        if (metadata != null and self.config.show_thread_id) {
-            try writer.print("[tid:{d}] ", .{metadata.?.thread_id});
-        }
-
-        // Write the actual message
-        try writer.print("{s}\n", .{message});
+        try final_writer.writeAll(output.items);
     }
 
     pub fn flush(self: *Self) !void {
