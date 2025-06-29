@@ -1,54 +1,48 @@
 # nexlog
 
-**nexlog** is a high-performance, flexible, and feature-rich logging library for Zig applications. Designed with both power and ease-of-use in mind, nexlog offers asynchronous logging, file rotation, structured logging, and much more — making it a perfect fit for projects of any size.
+<!-- Space for transparent logo -->
+<div align="center">
+  <!-- Logo will go here -->
+<img src="docs/logo.png" alt="nexlog" width="200" height="200">
+</div>
+
+A powerful, fast, and beautifully simple logging library for Zig applications. Built from the ground up to handle everything from quick debugging to production-scale logging with grace.
+
 [![Latest Release](https://img.shields.io/github/v/release/awacsm81/nexlog?include_prereleases&sort=semver)](https://github.com/awacsm81/nexlog/releases)
-[![Benchmark Results](https://img.shields.io/badge/Performance-40K%20logs%2Fs-brightgreen)](https://github.com/chrischtel/nexlog#benchmarks)
+[![Performance](https://img.shields.io/badge/Performance-40K%20logs%2Fs-brightgreen)](https://github.com/chrischtel/nexlog#benchmarks)
 [![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](./LICENSE)
 
 ---
 
-> **Note:** This project is currently in active development and may undergo significant changes. Please check the [CHANGELOG](./CHANGELOG.md) for the latest updates.
+*Currently in active development - check the [CHANGELOG](./CHANGELOG.md) for the latest updates*
 
-`Supports Zig 0.14 and 0.15.0-dev.877+0adcfd60f`
+**Compatible with Zig 0.14 and 0.15.0-dev.877+0adcfd60f**
 
-## Table of Contents
+## Why nexlog?  
 
-- [Features](#features)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Examples](#examples)
-- [Advanced Features](#advanced-features)
-  - [Structured Logging](#structured-logging)
-  - [File Rotation](#file-rotation)
-  - [Custom Handlers](#custom-handlers)
-  - [JSON Logging](#json-logging)
-  - [Context Tracking](#context-tracking)
-- [Configuration](#configuration)
-- [Benchmarks](#benchmarks)
-- [Contributing](#contributing)
-- [License](#license)
+After working with logging libraries across different languages, I found myself constantly missing features or fighting with overly complex APIs. nexlog was born from the simple idea that logging should be powerful when you need it, but never get in your way when you don't.
 
----
+Whether you're debugging a quick script or building a distributed system that needs to track requests across services, nexlog scales with your needs.
 
 ## Features
 
-- **Multiple Log Levels**: Supports debug, info, warning, and error levels
-- **Asynchronous Logging**: High-performance async mode minimizes impact on application performance
-- **File Rotation**: Automatic log file rotation with configurable size and backup counts
-- **Structured Logging**: Multiple output formats (JSON, logfmt, custom) for machine-readable logs
-- **Rich Metadata**: Automatic inclusion of timestamps, thread IDs, file names, and function names
-- **Custom Handlers**: Built-in handlers for console, file, and JSON outputs; extensible for custom needs
-- **Color Support**: Terminal color coding for different log levels
-- **Configurable Buffer Size**: Adjustable buffer size for optimal performance
-- **Context Tracking**: Support for department- or component-specific logging contexts
-- **High Performance**: Benchmarked at 40K+ logs per second
-- **Type Safety**: Full Zig type safety and compile-time checks
+**Core Logging**
+- Multiple log levels with beautiful colored output
+- Automatic source location tracking (file, line, function)
+- Rich metadata support with timestamps and thread IDs
+- Zero-overhead when logging is disabled
 
----
+**Advanced Features**
+- Context tracking for following requests across your application
+- Structured logging with JSON, logfmt, and custom formats
+- Automatic file rotation with configurable size limits
+- Custom handlers for sending logs anywhere
+- High-performance async mode for demanding applications
+- Type-safe API with full Zig compile-time guarantees
 
 ## Installation
 
-Add **nexlog** as a dependency in your `build.zig.zon` file:
+Add nexlog to your `build.zig.zon` file:
 
 ```zig
 .{
@@ -63,19 +57,16 @@ Add **nexlog** as a dependency in your `build.zig.zon` file:
 }
 ```
 
-### Quick Install
-
+**Quick install:**
 ```bash
 zig fetch --save git+https://github.com/chrischtel/nexlog/
 ```
 
-> **Note:** For development versions, append `#develop` to the URL.
-
----
+*For development versions, append `#develop` to the URL.*
 
 ## Quick Start
 
-Here's a simple example to get you started:
+Get up and running in three lines:
 
 ```zig
 const std = @import("std");
@@ -86,129 +77,129 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Simple logger initialization with minimal config
+    // Initialize logger with minimal configuration
     const logger = try nexlog.Logger.init(allocator, .{});
     defer logger.deinit();
 
-    // Basic logging - this is what most users want
+    // Start logging with automatic source location tracking
     logger.info("Application starting", .{}, nexlog.here(@src()));
     logger.debug("Initializing subsystems", .{}, nexlog.here(@src()));
-    logger.info("Processing started", .{}, nexlog.here(@src()));
     logger.warn("Resource usage high", .{}, nexlog.here(@src()));
     logger.info("Application shutdown complete", .{}, nexlog.here(@src()));
 }
 ```
----
 
-## Examples
+## Real-World Examples
 
-The `examples/` directory contains comprehensive examples for all features:
+### Context Tracking for Request Flows
 
-- `basic_usage.zig`: Simple logging setup and usage
-- `structured_logging.zig`: Advanced structured logging with JSON and logfmt
-- `file_rotation.zig`: File rotation configuration and management
-- `custom_handler.zig`: Creating custom log handlers
-- `json_logging.zig`: JSON-specific logging features
-- `logger_integration.zig`: Integrating with existing applications
-- `benchmark.zig`: Performance benchmarking examples
-
-### Structured Logging Example
+Track user requests as they flow through your application. Perfect for debugging distributed systems or complex request handling:
 
 ```zig
-const fields = [_]nexlog.StructuredField{
-    .{
-        .name = "user_id",
-        .value = "12345",
-    },
-    .{
-        .name = "action",
-        .value = "login",
-    },
+// Set request context once at the entry point
+nexlog.setRequestContext("req-12345", "user_login");
+defer nexlog.clearContext();
+
+logger.info("Processing user login for {s}", .{user_id}, nexlog.hereWithContext(@src()));
+
+// All subsequent logs automatically include request context
+try authenticateUser(logger, user_id);
+try loadUserProfile(logger, user_id);
+
+logger.info("User login completed successfully", .{}, nexlog.hereWithContext(@src()));
+```
+
+### Structured Logging for Analytics
+
+When you need machine-readable logs for monitoring and analytics:
+
+```zig
+// Configure formatter for JSON output
+const config = format.FormatConfig{
+    .structured_format = .json,
+    .include_timestamp_in_structured = true,
+    .include_level_in_structured = true,
 };
 
-logger.info("User logged in", .{}, &fields);
+var formatter = try format.Formatter.init(allocator, config);
+defer formatter.deinit();
+
+// Create structured fields for rich context
+const fields = [_]format.StructuredField{
+    .{ .name = "user_id", .value = "12345", .attributes = null },
+    .{ .name = "request_duration_ms", .value = "150", .attributes = null },
+    .{ .name = "endpoint", .value = "/api/login", .attributes = null },
+};
+
+logger.info("API request completed", .{}, &fields);
 ```
 
-### File Rotation Example
+### Smart File Rotation
+
+Never worry about log files filling up your disk:
 
 ```zig
+var builder = nexlog.LogBuilder.init();
 try builder
+    .setMinLevel(.debug)
     .enableFileLogging(true, "logs/app.log")
-    .setMaxFileSize(5 * 1024 * 1024)  // 5MB
-    .setMaxRotatedFiles(3)
+    .setMaxFileSize(10 * 1024 * 1024)  // 10MB per file
+    .setMaxRotatedFiles(5)             // Keep 5 backup files
     .enableRotation(true)
     .build(allocator);
+
+// Automatically creates: app.log, app.log.1, app.log.2, etc.
 ```
 
----
+### Custom Handlers for Specialized Needs
 
-## Advanced Features
-
-### Structured Logging
-
-nexlog supports multiple structured logging formats:
-
-1. **JSON Format**
-   ```json
-   {
-     "timestamp": "2024-03-19T10:42:00Z",
-     "level": "info",
-     "message": "User logged in",
-     "fields": {
-       "user_id": "12345",
-       "action": "login"
-     }
-   }
-   ```
-
-2. **Logfmt Format**
-   ```
-   timestamp=2024-03-19T10:42:00Z level=info message="User logged in" user_id=12345 action=login
-   ```
-
-3. **Custom Format**
-   ```
-   [2024-03-19T10:42:00Z] INFO | User logged in | user_id=12345 | action=login
-   ```
-
-### File Rotation
-
-Configure file rotation with size limits and backup counts:
+Send logs to external services, databases, or custom destinations:
 
 ```zig
-try builder
-    .enableFileLogging(true, "logs/app.log")
-    .setMaxFileSize(5 * 1024 * 1024)  // 5MB
-    .setMaxRotatedFiles(3)
-    .enableRotation(true)
-    .build(allocator);
-```
+pub const CustomHandler = struct {
+    allocator: std.mem.Allocator,
+    messages: std.ArrayList([]const u8),
 
-This creates rotated files like:
-- `app.log`
-- `app.log.1`
-- `app.log.2`
-- `app.log.3`
+    pub fn init(allocator: std.mem.Allocator) !*@This() {
+        const handler = try allocator.create(@This());
+        handler.* = .{
+            .allocator = allocator,
+            .messages = std.ArrayList([]const u8).init(allocator),
+        };
+        return handler;
+    }
 
-### Custom Handlers
-
-Create custom log handlers for specialized needs:
-
-```zig
-const CustomHandler = struct {
-    pub fn handle(level: nexlog.LogLevel, message: []const u8, fields: ?[]const nexlog.StructuredField) !void {
-        // Custom handling logic
+    pub fn log(self: *@This(), level: LogLevel, message: []const u8, metadata: LogMetadata) !void {
+        // Custom logic: store, forward, filter, transform, etc.
+        const stored_message = try self.allocator.dupe(u8, message);
+        try self.messages.append(stored_message);
     }
 };
 ```
 
----
+## Performance That Matters
+
+Recent benchmarks show nexlog handles high-throughput scenarios gracefully:
+
+| Scenario | Logs/Second | Notes |
+|----------|-------------|-------|
+| Simple console logging | 41,297 | Basic text output |
+| JSON structured logging | 26,790 | Full structured format |
+| Logfmt output | 39,284 | Key-value format |
+| Large payloads (100 fields) | 8,594 | Complex structured data |
+| Production integration | 5,878 | Full pipeline with handlers |
+
+Run the benchmarks yourself:
+```bash
+zig build bench
+```
 
 ## Configuration
 
-Advanced configuration using the builder pattern:
+Configure nexlog to fit your specific needs:
 
 ```zig
+var builder = nexlog.LogBuilder.init();
 try builder
     .setMinLevel(.debug)
     .enableColors(true)
@@ -218,62 +209,32 @@ try builder
     .setMaxRotatedFiles(3)
     .enableRotation(true)
     .enableAsyncMode(true)
-    .enableMetadata(true)
     .build(allocator);
 ```
 
-### Configuration Options
+## Learning More
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `minLevel` | Minimum log level to process | `.info` |
-| `bufferSize` | Size of the log buffer | `4096` |
-| `maxFileSize` | Maximum size before rotation | `10MB` |
-| `maxRotatedFiles` | Number of backup files to keep | `5` |
-| `asyncMode` | Enable asynchronous logging | `false` |
-| `colors` | Enable terminal colors | `true` |
-| `metadata` | Include metadata in logs | `true` |
+The `examples/` directory contains working code for every feature:
 
----
-
-## Benchmarks
-
-Recent benchmark results (Windows, Release mode):
-
-| Format | Logs/Second | Notes |
-|--------|-------------|-------|
-| JSON | 26,790 | Base structured format |
-| Logfmt | 39,284 | ~47% faster than JSON |
-| Custom | 41,297 | Fastest format |
-| Large Fields | 8,594 | With 100-field JSON payload |
-| Many Fields | 7,333 | With 50 separate fields |
-| With Attributes | 20,776 | Including field attributes |
-| Full Integration | 5,878 | Complete logging pipeline |
-
-Run benchmarks with:
-```bash
-zig build bench
-```
-
----
+- **`basic_usage.zig`** - Start here for simple logging
+- **`context_tracking.zig`** - Request tracking across functions  
+- **`structured_logging.zig`** - JSON, logfmt, and custom formats
+- **`file_rotation.zig`** - Automatic file management
+- **`custom_handler.zig`** - Build your own log destinations
+- **`json_logging.zig`** - Optimized JSON output
+- **`benchmark.zig`** - Performance testing and optimization
+- **`time_travel.zig`** - Advanced debugging features
+- **`visualization.zig`** - Log analysis and visualization
 
 ## Contributing
 
-Contributions are welcome! Please:
+I welcome contributions of all kinds. Whether it's fixing bugs, adding features, improving documentation, or sharing how you use nexlog in your projects.
 
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Open a Pull Request
-
-For major changes, please open an issue first to discuss your ideas.
-
----
+Before starting work on a major feature, please open an issue to discuss the approach. This helps ensure your effort aligns with the project's direction and avoids duplicate work.
 
 ## License
 
-This project is licensed under the BSD 3-Clause License. See the [LICENSE](./LICENSE) file for details.
+nexlog is available under the BSD 3-Clause License. See the [LICENSE](./LICENSE) file for the complete text.
 
 ---
 
-Happy logging with **nexlog**! 🚀
