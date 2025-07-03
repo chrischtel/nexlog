@@ -25,6 +25,8 @@ pub const output = struct {
     pub const json_handler = @import("output/json.zig");
 };
 
+pub const async_logging = @import("async/mod.zig");
+
 // Re-export main types and functions
 pub const Logger = core.logger.Logger;
 pub const LogLevel = core.types.LogLevel;
@@ -49,6 +51,13 @@ pub const JsonError = utils.json.JsonError;
 
 pub const BufferHealth = utils.buffer.BufferHealth;
 pub const BufferStats = utils.buffer.BufferStats;
+
+// Re-export async logging
+pub const AsyncLogger = async_logging.AsyncLogger;
+pub const AsyncLogConfig = async_logging.AsyncLogConfig;
+pub const AsyncConsoleHandler = async_logging.AsyncConsoleHandler;
+pub const AsyncFileHandler = async_logging.AsyncFileHandler;
+pub const AsyncLogHandler = async_logging.AsyncLogHandler;
 
 // Metadata creation helpers
 // The proper Zig way: users pass @src() explicitly to capture correct location

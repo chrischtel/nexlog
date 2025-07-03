@@ -73,6 +73,7 @@ pub fn build(b: *std.Build) void {
         .{ .file = "examples/metadata_ergonomics.zig", .name = "example_7" },
         .{ .file = "examples/formatting_test.zig", .name = "example_8" },
         .{ .file = "examples/context_tracking.zig", .name = "example_9" },
+        .{ .file = "examples/async_demo.zig", .name = "example_async", .libc = true },
     };
 
     const all_examples_step = b.step("all-examples", "Run all examples (for CI)");
