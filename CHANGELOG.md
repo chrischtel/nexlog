@@ -1,6 +1,16 @@
 ### v0.7.0 (XXXX XX, 2025)
 
 #### Added
+- **Full Async Logging Support** 🚀
+  - `AsyncLogger` with non-blocking operations designed for async runtimes (Zuki, tokio-style)
+  - `AsyncLogQueue` with configurable backpressure and automatic message dropping
+  - `AsyncConsoleHandler` and `AsyncFileHandler` with buffering and rotation
+  - Background processing thread with graceful shutdown
+  - Zero-copy message queuing with proper memory management
+  - Thread-safe multi-handler support
+  - Comprehensive async demo and quick start guide
+  - Perfect integration with async runtimes - no event loop blocking
+
 - Context tracking support
   - `LogContext` struct for request and correlation IDs
   - `ContextManager` for thread-safe context storage
@@ -8,6 +18,13 @@
   - Helper functions: `setRequestContext()`, `correlate()`, `clearContext()`
   - `hereWithContext(@src())` for context-aware logging
   - Example in `context_tracking.zig`
+
+#### Fixed
+- **Critical Memory Leaks in Core Logger** 🔧
+  - Fixed memory leaks in `ConsoleHandler`, `Formatter`, and `Logger` cleanup
+  - Proper `deinit()` implementation for all allocations
+  - Fixed ArrayList and placeholder cache memory management
+  - Resolves GPA memory leak errors in test environments
 
 ### Performance
 - **Major performance boost**: Stack buffer optimization eliminates heap allocations for common log sizes, achieving 63% improvement in JSON formatting (27K→44K logs/s)
