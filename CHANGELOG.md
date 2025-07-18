@@ -1,4 +1,4 @@
-### v0.7.0 (XXXX XX, 2025)
+### v0.7.0 (July 18, 2025)
 
 #### Added
 - **Full Async Logging Support** 🚀
