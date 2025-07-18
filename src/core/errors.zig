@@ -6,6 +6,7 @@ pub const Error = error{
     ConfigError,
     BufferError,
     Unexpected,
+    AlreadyInitialized,
 };
 
 pub const ErrorContext = struct {
