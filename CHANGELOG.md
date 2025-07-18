@@ -1,103 +1,102 @@
-### v0.7.0 (July 18, 2025)
+# Changelog
 
-#### Added
-- **Full Async Logging Support** 🚀
-  - `AsyncLogger` with non-blocking operations
-  - `AsyncLogQueue` with configurable backpressure and automatic message dropping
-  - `AsyncConsoleHandler` and `AsyncFileHandler` with buffering and rotation
-  - Background processing thread with graceful shutdown
-  - Zero-copy message queuing with proper memory management
-  - Thread-safe multi-handler support
-  - Comprehensive async demo and quick start guide
-  - Perfect integration with async runtimes - no event loop blocking
+All notable changes to this project will be documented in this file.
 
-- Context tracking support
-  - `LogContext` struct for request and correlation IDs
-  - `ContextManager` for thread-safe context storage
-  - New template placeholders: `{request_id}`, `{correlation_id}`, `{trace_id}`, `{operation}`
-  - Helper functions: `setRequestContext()`, `correlate()`, `clearContext()`
-  - `hereWithContext(@src())` for context-aware logging
-  - Example in `context_tracking.zig`
+## [unreleased]
 
-#### Fixed
-- **Critical Memory Leaks in Core Logger** 🔧
-  - Fixed memory leaks in `ConsoleHandler`, `Formatter`, and `Logger` cleanup
-  - Proper `deinit()` implementation for all allocations
-  - Fixed ArrayList and placeholder cache memory management
-  - Resolves GPA memory leak errors in test environments
+### ⚙️ Miscellaneous Tasks
 
-### Performance
-- **Major performance boost**: Stack buffer optimization eliminates heap allocations for common log sizes, achieving 63% improvement in JSON formatting (27K→44K logs/s)
-  - small performance impact on other formats
+- Add git-cliff config for changelog generation
 
-#### Deprecated
-- Deprecated `NetworkHandler` and `NetworkOutput` APIs (On Hold for now)
-  - **Note**: Network output is highly experimental and not tested in production environments
-  - Use `FileHandler` or custom handlers for reliable logging
-  - **Future**: Will be thoroughly tested, evolved, and stabilized in upcoming versions
+## [0.7.0] - 2025-07-18
+
+### 🚀 Features
+
+- Add stack buffer optimization for performance boost
 
 
-### v0.6.1 (June 28, 2025)
+### 💼 Other
 
-#### Fixed
-- Updated package version metadata in build.zig.zon to match release version
-- Corrected changelog release date formatting
+- NetworkHandler and NetworkOutput
 
-### v0.6.0 (June 28, 2025)
+## [0.6.1] - 2025-06-28
 
-#### Added
-- Automatic metadata capture helpers
-  - New `LogMetadata.create()` function with automatic source location capture using `@src()` builtin
-  - Added convenience functions `here()`, `hereWithTimestamp()`, and `hereWithThreadId()` for ergonomic metadata creation
-- Comprehensive formatting test example (`formatting_test.zig`)
-- **documentation suite**
-  - Configuration reference with all available options
-  - Custom formatting guide with templates and placeholders
-  - Complete API reference documentation
+### 🚀 Features
 
-#### Fixed
-- **Fixed automatic metadata capture helpers to show correct caller source location instead of helper definition location**
-  - Changed API: `nexlog.here(@src())` instead of `nexlog.here()`
-  - Source location now correctly captured from call site, not helper function definition
-- **Fixed ISO8601 timestamp formatting producing invalid output like `[+2022-+1-+1T00:00:00Z]` - now correctly generates `[2022-01-01T00:00:00Z]`**
-- Hostname placeholder implementation for better cross-platform compatibility
+- Add automatic metadata capture helpers
 
-#### Changed
-- Enhanced custom formatting system validation
-- Verified custom template functionality with user-defined formats
-- Confirmed support for multiple level formats (upper, lower, short variants)
+## [0.5.0-beta.2] - 2025-04-11
 
-### v0.5.0-beta.1 (April 10, 2025)
-- Added structured logging support
-  - New `StructuredField` and `FieldValue` types for type-safe structured data
-  - Enhanced `FormatConfig` to support structured logging formats
-  - Added `formatStructured` method to the `Formatter` struct
-  - Implemented JSON and logfmt formatting for structured logs
-- Added comprehensive examples for structured logging
-  - Created `structured_logging.zig` with examples for JSON, logfmt, and custom formats
-  - Added `logger_integration.zig` to demonstrate integration with the main logger
-  - Fixed memory management in formatter initialization
-- Improved error handling in logger convenience methods
-  - Enhanced error reporting in `info`, `debug`, `warn`, and `err` methods
-  - Added proper error handling for flush operations
-- Fixed various compilation and linter errors
-  - Resolved unused variable warnings
-  - Fixed memory leaks in formatter initialization
-  - Improved code organization and readability
+### 🚀 Features
 
-### v0.4.0
-- fixed segmenation fault on json logging for windows
-  - no need to call `defer json_handler.deinit();` anymore since the ownership of the handler is passed to the logger
-- reordered memory managment for the json handler
-- bug fixes
+- *(buffer)* Add extended health statistics fields
+- *(buffer)* Initialize health monitoring fields
+- *(buffer)* Implement health metric tracking
+- *(buffer)* Add health reporting system
+- *(buffer)* Add quick health check and metric reset
+- *(api)* Expose buffer health monitoring types
 
-### v0.3.3 (February 5, 2025)
-- improvments
-- checking on comptime wethever use zig 0.14 or 0.13 API for handlers.zig
+### 🐛 Bug Fixes
 
-### v0.3.2 (February 5, 2025)
-- small improvements
+- *(buffer)* Use atomic swap for peak usage tracking
 
-### Fixed v0.3.0 (February 5, 2025)
-Added new non-failing log methods for each log level. These methods do not return an error.
-fixed compilation errors to support zig 0.14-dev
+## [0.5.0-beta.1] - 2025-04-10
+
+### ⚙️ Miscellaneous Tasks
+
+- Prepare release v0.5.0-beta.1
+
+## [0.4.2] - 2025-03-19
+
+### 🐛 Bug Fixes
+
+- CI error due to missing run step (added step all-examples to build and run ALL examples (for CI))
+- Added missing flush to .debug log method -> fixes problem with weird log output to file
+
+## [0.4.0] - 2025-02-05
+
+### 🐛 Bug Fixes
+
+- Windows memory management in JsonHandler
+- Potential double free in json example
+
+## [0.3.0] - 2025-02-05
+
+### 🚀 Features
+
+- Added non fallible methods for logging
+
+### 🐛 Bug Fixes
+
+- Fixed API errors due to version bump (Zig v0.14.x)
+
+### 💼 Other
+
+- Updated parts of 'basic_usage' example to use the new Infallible logging methods
+
+## [0.2.0-rc.2] - 2025-02-02
+
+### 🐛 Bug Fixes
+
+- Renamed '.Pointer' -> '.pointer' and '.One' to '.one'
+- Renamed MAX_PATH_BYTES to max_path_bytes
+
+## [0.2.0-rc.1] - 2025-01-30
+
+### 💼 Other
+
+- Fixed errors, conversion and shadowing errors
+- Implemented formatting into existing configuration
+
+### ⚙️ Miscellaneous Tasks
+
+- *(docs)* Removed Quick Start Example, forwarding to --examples folder--
+- *(docs)* Removed Quick Start Example, forwarding to --examples folder-- [#13](https://github.com/chrischtel/nexlog/issues/13)
+
+## [0.2.0-alpha.1] - 2025-01-16
+
+### 🐛 Bug Fixes
+
+- *(file-handler)* Resolve deadlock and memory leaks in log rotation
+
+<!-- generated by git-cliff -->
