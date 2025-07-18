@@ -2,7 +2,7 @@
 
 #### Added
 - **Full Async Logging Support** 🚀
-  - `AsyncLogger` with non-blocking operations designed for async runtimes (Zuki, tokio-style)
+  - `AsyncLogger` with non-blocking operations
   - `AsyncLogQueue` with configurable backpressure and automatic message dropping
   - `AsyncConsoleHandler` and `AsyncFileHandler` with buffering and rotation
   - Background processing thread with graceful shutdown
