@@ -10,7 +10,7 @@ A powerful, fast, and beautifully simple logging library for Zig applications. B
 
 [![Latest Release](https://img.shields.io/github/v/release/awacsm81/nexlog?include_prereleases&sort=semver)](https://github.com/awacsm81/nexlog/releases)
 [![Performance](https://img.shields.io/badge/Performance-40K%20logs%2Fs-brightgreen)](https://github.com/chrischtel/nexlog#benchmarks)
-[![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](./LICENSE)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
 ---
 
@@ -234,7 +234,7 @@ Before starting work on a major feature, please open an issue to discuss the app
 
 ## License
 
-nexlog is available under the BSD 3-Clause License. See the [LICENSE](./LICENSE) file for the complete text.
+nexlog is available under the MIT License. See the [LICENSE](./LICENSE) file for the complete text.
 
 ---
 
