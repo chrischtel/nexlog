@@ -1,8 +1,0 @@
-# Ignore Zig build artifacts
-.zig-cache/
-zig-out/
-*.log
-logs/
-*test_*
-test*
-test_logs/*.json
