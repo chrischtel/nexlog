@@ -1,0 +1,60 @@
+module nexlog::validators_test;
+
+import std::core::string;
+import std::core::test::*;
+import std::io;
+
+
+
+// Basic checks + eq/ne
+
+fn void test_is_uuid() @test {
+    test::@check(is_uuid("12345678-1234-1234-1234-123456789abc"), "valid UUID should pass");
+    ne(is_uuid("not-a-uuid"), true);
+    ne(is_uuid("12345678-1234-1234-1234-123456789ab"), true);   // 35 chars
+    ne(is_uuid("123456781234-1234-1234-123456789abc"), true);   // missing hyphen
+}
+
+
+fn void test_is_email()@test {
+    eq(is_email("a@b"), true);
+    eq(is_email("no-at-symbol"), false);
+}
+
+
+fn void test_is_ip_url_path()@test {
+    eq(is_ip_address("127.0.0.1"), true);
+    eq(is_ip_address("127.0.0"), false);
+
+    eq(is_url("http://x"), true);
+    eq(is_url("https://x"), true);
+    eq(is_url("ftp://x"), false);
+
+    eq(is_path("/var/log"), true);
+    eq(is_path("C:\\Temp\\x"), true);
+    eq(is_path("plain"), false);
+}
+
+// Demonstrate eq_approx and comparison helpers
+
+fn void test_numbers() @test{
+    eq_approx(3.1415926, 3.1415927, places: 6); // equal up to 6 places
+    gt(5, 3);
+    ge(5, 5);
+    lt(2, 7);
+    le(2, 2);
+}
+
+// Demonstrate @error with a fault-returning function
+faultdef BAD_INPUT;
+
+fn void? parse_must_fail(bool trigger) {
+    if (trigger) return BAD_INPUT?;
+    return;
+}
+
+
+fn void test_error_macro() @test{
+    @error(parse_must_fail(true), BAD_INPUT); // passes if BAD_INPUT is thrown
+    @check(@ok(parse_must_fail(false)), "should not fail when trigger=false");
+}

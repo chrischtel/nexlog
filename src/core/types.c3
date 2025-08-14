@@ -79,6 +79,7 @@ fn bool is_email(String value)
 fn bool is_ip_address(String value)
 {
     // very basic IPv4 heuristic: exactly three dots
+    // TODO: Improve IP detections
     uint dots = 0;
     foreach (c : value) if (c == '.') dots++;
     return dots == 3;
