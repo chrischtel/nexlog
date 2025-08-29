@@ -4,26 +4,22 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const lib = b.addStaticLibrary(.{
-        .name = "Nexlog",
+    const nexlog_module = b.addModule("nexlog", .{
         .root_source_file = b.path("src/nexlog.zig"),
         .target = target,
         .optimize = optimize,
+    });
+
+    const lib = b.addLibrary(.{
+        .name = "nexlog",
+        .root_module = nexlog_module,
+        .linkage = .static,
     });
 
     b.installArtifact(lib);
 
-    // Create the nexlog module for tests to use
-    const nexlog_module = b.addModule("nexlog", .{
-        .root_source_file = b.path("src/nexlog.zig"),
-    });
-
     // Library unit tests
-    const lib_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/nexlog.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
+    const lib_unit_tests = b.addTest(.{ .root_module = nexlog_module });
     lib_unit_tests.root_module.addImport("nexlog", nexlog_module);
 
     const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
@@ -44,11 +40,11 @@ pub fn build(b: *std.Build) void {
             const extension = std.fs.path.extension(entry.name);
             if (std.mem.eql(u8, extension, ".zig")) {
                 const test_path = b.fmt("tests/{s}", .{entry.name});
-                const test_exe = b.addTest(.{
+                const test_exe = b.addTest(.{ .root_module = b.createModule(.{
                     .root_source_file = b.path(test_path),
                     .target = target,
                     .optimize = optimize,
-                });
+                }) });
                 test_exe.root_module.addImport("nexlog", nexlog_module);
 
                 const run_test = b.addRunArtifact(test_exe);
@@ -82,9 +78,11 @@ pub fn build(b: *std.Build) void {
         for (examples) |example| {
             const exe = b.addExecutable(.{
                 .name = example.name,
-                .target = target,
-                .optimize = optimize,
-                .root_source_file = b.path(example.file),
+                .root_module = b.createModule(.{
+                    .target = target,
+                    .optimize = optimize,
+                    .root_source_file = b.path(example.file),
+                }),
             });
             exe.root_module.addImport("nexlog", nexlog_module);
             if (example.libc) {

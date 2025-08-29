@@ -44,7 +44,7 @@ pub const AsyncConsoleHandler = struct {
             .allocator = allocator,
             .config = config,
             .formatter = formatter,
-            .buffer = std.ArrayList(u8).init(allocator),
+            .buffer = .empty,
             .mutex = std.Thread.Mutex{},
         };
 
@@ -55,7 +55,7 @@ pub const AsyncConsoleHandler = struct {
         if (self.formatter) |formatter| {
             formatter.deinit();
         }
-        self.buffer.deinit();
+        self.buffer.deinit(self.allocator);
         self.allocator.destroy(self);
     }
 
@@ -80,11 +80,7 @@ pub const AsyncConsoleHandler = struct {
         } else {
             // Use stack buffer for formatting to avoid additional allocations
             var format_buffer: [2048]u8 = undefined;
-            var fba = std.heap.FixedBufferAllocator.init(&format_buffer);
-            const temp_allocator = fba.allocator();
-
-            var output = std.ArrayList(u8).init(temp_allocator);
-            const writer = output.writer();
+            var writer: std.Io.Writer = .fixed(&format_buffer);
 
             // Fast path: Simple format without metadata
             if (entry.metadata == null or (!self.config.show_source_location and !self.config.show_function and !self.config.show_thread_id)) {
@@ -136,7 +132,7 @@ pub const AsyncConsoleHandler = struct {
                 try writer.print(" {s}\n", .{entry.message});
             }
 
-            try self.buffer.appendSlice(output.items);
+            try self.buffer.appendSlice(writer.buffered());
         }
 
         // Write to output in single operation (non-blocking for console)
@@ -155,12 +151,12 @@ pub const AsyncConsoleHandler = struct {
     pub fn flushAsync(self: *Self) !void {
         // Console output is typically immediately flushed by the OS
         // But we can force a sync for safety
-        const final_writer = if (self.config.use_stderr)
-            std.io.getStdErr().writer()
+        const out = if (self.config.use_stderr)
+            std.fs.File.stderr()
         else
-            std.io.getStdOut().writer();
+            std.fs.File.stdout();
 
-        _ = final_writer.context.sync() catch {};
+        _ = try out.sync();
     }
 
     /// Convert to generic AsyncLogHandler interface

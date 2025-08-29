@@ -37,7 +37,7 @@ pub const AsyncLogQueue = struct {
     pub fn init(allocator: std.mem.Allocator, max_size: usize) Self {
         return Self{
             .allocator = allocator,
-            .queue = std.ArrayList(LogEntry).init(allocator),
+            .queue = .empty,
             .mutex = std.Thread.Mutex{},
             .condition = std.Thread.Condition{},
             .max_size = max_size,
@@ -54,7 +54,7 @@ pub const AsyncLogQueue = struct {
         for (self.queue.items) |*entry| {
             entry.deinit(self.allocator);
         }
-        self.queue.deinit();
+        self.queue.deinit(self.allocator);
         self.is_closed = true;
         self.condition.broadcast();
     }
@@ -81,7 +81,7 @@ pub const AsyncLogQueue = struct {
         var owned_entry = entry;
         owned_entry.message = owned_message;
 
-        try self.queue.append(owned_entry);
+        try self.queue.append(self.allocator, owned_entry);
         self.condition.signal();
     }
 
@@ -158,7 +158,7 @@ pub const AsyncLogProcessor = struct {
         return Self{
             .allocator = allocator,
             .queue = queue,
-            .handlers = std.ArrayList(*AsyncLogHandler).init(allocator),
+            .handlers = .empty,
             .thread = null,
             .should_stop = std.atomic.Value(bool).init(false),
             .stats = ProcessorStats{},
@@ -168,14 +168,14 @@ pub const AsyncLogProcessor = struct {
 
     pub fn deinit(self: *Self) void {
         self.stop();
-        self.handlers.deinit();
+        self.handlers.deinit(self.allocator);
     }
 
     pub fn addHandler(self: *Self, handler: *AsyncLogHandler) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        try self.handlers.append(handler);
+        try self.handlers.append(self.allocator, handler);
     }
 
     pub fn start(self: *Self) !void {

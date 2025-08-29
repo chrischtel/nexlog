@@ -67,7 +67,7 @@ pub fn main() !void {
         try logger.flush(); // Ensure immediate write
 
         // Add small delay to make it more realistic
-        std.time.sleep(50 * std.time.ns_per_ms);
+        std.Thread.sleep(50 * std.time.ns_per_ms);
 
         // Every 25 messages, log a notification
         if (i % 25 == 0) {

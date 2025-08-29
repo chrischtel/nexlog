@@ -31,7 +31,7 @@ pub const ErrorContext = struct {
         };
     }
 
-    pub fn format(self: ErrorContext, writer: anytype) anyerror!void {
+    pub fn format(self: ErrorContext, writer: *std.Io.Writer) std.Io.Writer.Error!void {
         try writer.print(
             "Error[{d}] {s}:{d}: {s} - {s}\n",
             .{
@@ -65,7 +65,7 @@ pub const ErrorHandler = struct {
         while (retries < self.max_retries) : (retries += 1) {
             self.handler_fn(context) catch |err| {
                 if (retries == self.max_retries - 1) return err;
-                std.time.sleep(self.retry_delay_ms * std.time.ns_per_ms);
+                std.Thread.sleep(self.retry_delay_ms * std.time.ns_per_ms);
                 continue;
             };
             break;
@@ -83,6 +83,8 @@ pub fn makeError(
 }
 
 pub fn defaultErrorHandler(context: ErrorContext) anyerror!void {
-    const stderr = std.io.getStdErr().writer();
-    try context.format(stderr);
+    var stderr_buf: [4096]u8 = undefined;
+    var stderr = std.fs.File.stderr().writer(&stderr_buf);
+    try context.format(&stderr.interface);
+    try stderr.interface.flush();
 }

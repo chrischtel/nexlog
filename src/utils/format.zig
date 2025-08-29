@@ -17,7 +17,7 @@ pub const FieldValue = union(enum) {
     object: std.StringHashMap(FieldValue),
     null,
 
-    pub fn format(self: FieldValue, writer: anytype) !void {
+    pub fn format(self: FieldValue, writer: *std.Io.Writer) !void {
         switch (self) {
             .string => |str| try writer.print("\"{s}\"", .{str}),
             .integer => |i| try writer.print("{d}", .{i}),
@@ -151,7 +151,7 @@ pub const Formatter = struct {
         self.* = .{
             .allocator = allocator,
             .config = config,
-            .placeholder_cache = std.ArrayList(Placeholder).init(allocator),
+            .placeholder_cache = .empty,
         };
         // Parse template once during initialization
         try self.parsePlaceholders();
@@ -159,7 +159,7 @@ pub const Formatter = struct {
     }
 
     pub fn deinit(self: *Formatter) void {
-        self.placeholder_cache.deinit();
+        self.placeholder_cache.deinit(self.allocator);
         self.allocator.destroy(self);
     }
 
@@ -194,7 +194,7 @@ pub const Formatter = struct {
                 const placeholder_name = self.config.template[start + 1 .. if (fmt_spec == null) i else i - fmt_spec.?.len - 1];
                 const placeholder_type = try self.getPlaceholderType(placeholder_name);
 
-                try self.placeholder_cache.append(.{
+                try self.placeholder_cache.append(self.allocator, .{
                     .type = placeholder_type,
                     .start = start,
                     .end = i + 1,
@@ -259,18 +259,19 @@ pub const Formatter = struct {
         var fba = std.heap.FixedBufferAllocator.init(buffer);
         const stack_allocator = fba.allocator();
 
-        var result = std.ArrayList(u8).init(stack_allocator);
+        var result: std.Io.Writer.Allocating = .init(stack_allocator);
+
         var last_pos: usize = 0;
 
         // Format using stack buffer
         const format_result = blk: {
             for (self.placeholder_cache.items) |placeholder| {
                 // Add text before placeholder
-                result.appendSlice(self.config.template[last_pos..placeholder.start]) catch break :blk null;
+                result.writer.writeAll(self.config.template[last_pos..placeholder.start]) catch break :blk null;
 
                 // Format placeholder
                 self.formatPlaceholder(
-                    &result,
+                    &result.writer,
                     placeholder,
                     level,
                     message,
@@ -281,10 +282,10 @@ pub const Formatter = struct {
             }
 
             // Add remaining text after last placeholder
-            result.appendSlice(self.config.template[last_pos..]) catch break :blk null;
+            result.writer.writeAll(self.config.template[last_pos..]) catch break :blk null;
 
             // Success! Return stack-allocated result
-            break :blk result.items;
+            break :blk result.written();
         };
 
         if (format_result) |stack_result| {
@@ -294,17 +295,17 @@ pub const Formatter = struct {
 
         // Stack buffer too small, fall back to heap allocation
         result.deinit(); // Clean up failed stack attempt
-        result = std.ArrayList(u8).init(self.allocator);
+        result = .init(self.allocator);
         errdefer result.deinit();
 
         last_pos = 0;
         for (self.placeholder_cache.items) |placeholder| {
             // Add text before placeholder
-            try result.appendSlice(self.config.template[last_pos..placeholder.start]);
+            try result.writer.writeAll(self.config.template[last_pos..placeholder.start]);
 
             // Format placeholder
             try self.formatPlaceholder(
-                &result,
+                &result.writer,
                 placeholder,
                 level,
                 message,
@@ -315,48 +316,48 @@ pub const Formatter = struct {
         }
 
         // Add remaining text after last placeholder
-        try result.appendSlice(self.config.template[last_pos..]);
+        try result.writer.writeAll(self.config.template[last_pos..]);
 
         return result.toOwnedSlice();
     }
 
     fn formatPlaceholder(
         self: *Formatter,
-        result: *std.ArrayList(u8),
+        writer: *std.Io.Writer,
         placeholder: Placeholder,
         level: types.LogLevel,
         message: []const u8,
         metadata: ?types.LogMetadata,
     ) !void {
         switch (placeholder.type) {
-            .level => try self.formatLevel(result, level),
-            .message => try result.appendSlice(message),
-            .timestamp => try self.formatTimestamp(result, metadata),
-            .thread => if (metadata) |m| try std.fmt.format(result.writer(), "{d}", .{m.thread_id}),
-            .file => if (metadata) |m| try result.appendSlice(m.file),
-            .line => if (metadata) |m| try std.fmt.format(result.writer(), "{d}", .{m.line}),
-            .function => if (metadata) |m| try result.appendSlice(m.function),
-            .color => if (self.config.use_color) try result.appendSlice(level.toColor()),
-            .reset => if (self.config.use_color) try result.appendSlice("\x1b[0m"),
+            .level => try self.formatLevel(writer, level),
+            .message => try writer.writeAll(message),
+            .timestamp => try self.formatTimestamp(writer, metadata),
+            .thread => if (metadata) |m| try writer.print("{d}", .{m.thread_id}),
+            .file => if (metadata) |m| try writer.writeAll(m.file),
+            .line => if (metadata) |m| try writer.print("{d}", .{m.line}),
+            .function => if (metadata) |m| try writer.writeAll(m.function),
+            .color => if (self.config.use_color) try writer.writeAll(level.toColor()),
+            .reset => if (self.config.use_color) try writer.writeAll("\x1b[0m"),
 
             // Context placeholders
-            .request_id => try self.formatContextField(result, metadata, "request_id"),
-            .correlation_id => try self.formatContextField(result, metadata, "correlation_id"),
-            .trace_id => try self.formatContextField(result, metadata, "trace_id"),
-            .span_id => try self.formatContextField(result, metadata, "span_id"),
-            .user_id => try self.formatContextField(result, metadata, "user_id"),
-            .session_id => try self.formatContextField(result, metadata, "session_id"),
-            .operation => try self.formatContextField(result, metadata, "operation"),
-            .component => try self.formatContextField(result, metadata, "component"),
+            .request_id => try self.formatContextField(writer, metadata, "request_id"),
+            .correlation_id => try self.formatContextField(writer, metadata, "correlation_id"),
+            .trace_id => try self.formatContextField(writer, metadata, "trace_id"),
+            .span_id => try self.formatContextField(writer, metadata, "span_id"),
+            .user_id => try self.formatContextField(writer, metadata, "user_id"),
+            .session_id => try self.formatContextField(writer, metadata, "session_id"),
+            .operation => try self.formatContextField(writer, metadata, "operation"),
+            .component => try self.formatContextField(writer, metadata, "component"),
 
-            .custom => try self.formatCustomPlaceholder(result, placeholder, level, message, metadata),
+            .custom => try self.formatCustomPlaceholder(writer, placeholder, level, message, metadata),
         }
     }
 
     /// Helper function to format context fields
     fn formatContextField(
         self: *Formatter,
-        result: *std.ArrayList(u8),
+        writer: *std.Io.Writer,
         metadata: ?types.LogMetadata,
         field_name: []const u8,
     ) !void {
@@ -384,15 +385,15 @@ pub const Formatter = struct {
                     null;
 
                 if (field_value) |value| {
-                    try result.appendSlice(value);
+                    try writer.writeAll(value);
                 } else {
-                    try result.appendSlice("-"); // Default placeholder for missing values
+                    try writer.writeByte('-'); // Default placeholder for missing values
                 }
             } else {
-                try result.appendSlice("-"); // No context available
+                try writer.writeByte('-'); // No context available
             }
         } else {
-            try result.appendSlice("-"); // No metadata available
+            try writer.writeByte('-'); // No metadata available
         }
     }
 
@@ -420,18 +421,36 @@ pub const Formatter = struct {
         var fba = std.heap.FixedBufferAllocator.init(buffer);
         const stack_allocator = fba.allocator();
 
-        var result = std.ArrayList(u8).init(stack_allocator);
+        var result: std.Io.Writer.Allocating = .init(stack_allocator);
 
         // Format using stack buffer
         const format_result = blk: {
             switch (self.config.structured_format) {
-                .json => self.formatStructuredJson(&result, level, message, fields, metadata) catch break :blk null,
-                .logfmt => self.formatStructuredLogfmt(&result, level, message, fields, metadata) catch break :blk null,
-                .custom => self.formatStructuredCustom(&result, level, message, fields, metadata) catch break :blk null,
+                .json => self.formatStructuredJson(
+                    &result.writer,
+                    level,
+                    message,
+                    fields,
+                    metadata,
+                ) catch break :blk null,
+                .logfmt => self.formatStructuredLogfmt(
+                    &result.writer,
+                    level,
+                    message,
+                    fields,
+                    metadata,
+                ) catch break :blk null,
+                .custom => self.formatStructuredCustom(
+                    &result.writer,
+                    level,
+                    message,
+                    fields,
+                    metadata,
+                ) catch break :blk null,
             }
 
             // Success! Return stack-allocated result
-            break :blk result.items;
+            break :blk result.written();
         };
 
         if (format_result) |stack_result| {
@@ -441,13 +460,13 @@ pub const Formatter = struct {
 
         // Stack buffer too small, fall back to heap allocation
         result.deinit(); // Clean up failed stack attempt
-        result = std.ArrayList(u8).init(self.allocator);
+        result = .init(self.allocator);
         errdefer result.deinit();
 
         switch (self.config.structured_format) {
-            .json => try self.formatStructuredJson(&result, level, message, fields, metadata),
-            .logfmt => try self.formatStructuredLogfmt(&result, level, message, fields, metadata),
-            .custom => try self.formatStructuredCustom(&result, level, message, fields, metadata),
+            .json => try self.formatStructuredJson(&result.writer, level, message, fields, metadata),
+            .logfmt => try self.formatStructuredLogfmt(&result.writer, level, message, fields, metadata),
+            .custom => try self.formatStructuredCustom(&result.writer, level, message, fields, metadata),
         }
 
         return result.toOwnedSlice();
@@ -455,64 +474,64 @@ pub const Formatter = struct {
 
     fn formatStructuredJson(
         self: *Formatter,
-        result: *std.ArrayList(u8),
+        writer: *std.Io.Writer,
         level: types.LogLevel,
         message: []const u8,
         fields: []const StructuredField,
         metadata: ?types.LogMetadata,
     ) !void {
-        try result.appendSlice("{");
+        try writer.writeByte('{');
         var first = true;
 
         // Add timestamp if configured
         if (self.config.include_timestamp_in_structured) {
-            try result.appendSlice("\"timestamp\":\"");
-            try self.formatTimestamp(result, metadata);
-            try result.appendSlice("\"");
+            try writer.writeAll("\"timestamp\":\"");
+            try self.formatTimestamp(writer, metadata);
+            try writer.writeByte('"');
             first = false;
         }
 
         // Add log level if configured
         if (self.config.include_level_in_structured) {
-            if (!first) try result.appendSlice(",");
-            try result.appendSlice("\"level\":\"");
-            try self.formatLevel(result, level);
-            try result.appendSlice("\"");
+            if (!first) try writer.writeByte(',');
+            try writer.writeAll("\"level\":\"");
+            try self.formatLevel(writer, level);
+            try writer.writeByte('"');
             first = false;
         }
 
         // Add message
-        if (!first) try result.appendSlice(",");
-        try result.appendSlice("\"msg\":\"");
-        try result.appendSlice(message);
-        try result.appendSlice("\"");
+        if (!first) try writer.writeByte(',');
+        try writer.writeAll("\"msg\":\"");
+        try writer.writeAll(message);
+        try writer.writeByte('"');
 
         // Add all fields
         for (fields) |field| {
-            try result.appendSlice(",\"");
-            try result.appendSlice(field.name);
-            try result.appendSlice("\":");
+            try writer.writeAll(",\"");
+            try writer.writeAll(field.name);
+            try writer.writeAll("\":");
             const field_value = FieldValue{ .string = field.value };
-            try field_value.format(result.writer());
+            try field_value.format(writer);
 
             // Add attributes if present
             if (field.attributes) |attrs| {
                 var it = attrs.iterator();
                 while (it.next()) |entry| {
-                    try result.appendSlice(",\"");
-                    try result.appendSlice(field.name);
-                    try result.appendSlice("_");
-                    try result.appendSlice(entry.key_ptr.*);
-                    try result.appendSlice("\":\"");
+                    try writer.writeAll(",\"");
+                    try writer.writeAll(field.name);
+                    try writer.writeByte('_');
+                    try writer.writeAll(entry.key_ptr.*);
+                    try writer.writeAll("\":\"");
                     const value_slice = &[_]u8{entry.value_ptr.*};
                     const attr_value = FieldValue{ .string = value_slice };
-                    try attr_value.format(result.writer());
-                    try result.appendSlice("\"");
+                    try attr_value.format(writer);
+                    try writer.writeByte('"');
                 }
             }
         }
 
-        try result.appendSlice("}");
+        try writer.writeByte('}');
     }
 
     fn escapeLogfmtValue(value: []const u8, writer: anytype) !void {
@@ -572,19 +591,18 @@ pub const Formatter = struct {
     // Add the logfmt formatter implementation
     fn formatStructuredLogfmt(
         self: *Formatter,
-        result: *std.ArrayList(u8),
+        writer: *std.Io.Writer,
         level: types.LogLevel,
         message: []const u8,
         fields: []const StructuredField,
         metadata: ?types.LogMetadata,
     ) !void {
-        const writer = result.writer();
         var first = true;
 
         // Add timestamp if configured
         if (self.config.include_timestamp_in_structured) {
             try writer.writeAll("timestamp=");
-            try self.formatTimestamp(result, metadata);
+            try self.formatTimestamp(writer, metadata);
             if (!first) try writer.writeByte(' ');
             first = false;
         }
@@ -593,7 +611,7 @@ pub const Formatter = struct {
         if (self.config.include_level_in_structured) {
             if (!first) try writer.writeByte(' ');
             try writer.writeAll("level=");
-            try self.formatLevel(result, level);
+            try self.formatLevel(writer, level);
             first = false;
         }
 
@@ -630,13 +648,12 @@ pub const Formatter = struct {
     // Add the custom formatter implementation
     fn formatStructuredCustom(
         self: *Formatter,
-        result: *std.ArrayList(u8),
+        writer: *std.Io.Writer,
         level: types.LogLevel,
         message: []const u8,
         fields: []const StructuredField,
         metadata: ?types.LogMetadata,
     ) !void {
-        const writer = result.writer();
         const field_sep = self.config.custom_field_separator orelse " | ";
         const kv_sep = self.config.custom_key_value_separator orelse "=";
         var first = true;
@@ -646,7 +663,7 @@ pub const Formatter = struct {
             if (!first) try writer.writeAll(field_sep);
             try writer.writeAll("timestamp");
             try writer.writeAll(kv_sep);
-            try self.formatTimestamp(result, metadata);
+            try self.formatTimestamp(writer, metadata);
             first = false;
         }
 
@@ -655,7 +672,7 @@ pub const Formatter = struct {
             if (!first) try writer.writeAll(field_sep);
             try writer.writeAll("level");
             try writer.writeAll(kv_sep);
-            try self.formatLevel(result, level);
+            try self.formatLevel(writer, level);
             first = false;
         }
 
@@ -692,15 +709,15 @@ pub const Formatter = struct {
 
     fn formatLevel(
         self: *Formatter,
-        result: *std.ArrayList(u8),
+        writer: *std.Io.Writer,
         level: types.LogLevel,
     ) !void {
         const level_str = level.toString();
         switch (self.config.level_format) {
-            .upper => try result.appendSlice(level_str),
+            .upper => try writer.writeAll(level_str),
             .lower => {
                 for (level_str) |c| {
-                    try result.append(std.ascii.toLower(c));
+                    try writer.writeByte(std.ascii.toLower(c));
                 }
             },
             .short_upper => {
@@ -712,7 +729,7 @@ pub const Formatter = struct {
                     .err => "ERR",
                     .critical => "CRT",
                 };
-                try result.appendSlice(short);
+                try writer.writeAll(short);
             },
             .short_lower => {
                 const short = switch (level) {
@@ -723,20 +740,20 @@ pub const Formatter = struct {
                     .err => "err",
                     .critical => "crt",
                 };
-                try result.appendSlice(short);
+                try writer.writeAll(short);
             },
         }
     }
 
     fn formatTimestamp(
         self: *Formatter,
-        result: *std.ArrayList(u8),
+        writer: *std.Io.Writer,
         metadata: ?types.LogMetadata,
     ) !void {
         const timestamp = if (metadata) |m| m.timestamp else std.time.timestamp();
 
         switch (self.config.timestamp_format) {
-            .unix => try std.fmt.format(result.writer(), "{d}", .{timestamp}),
+            .unix => try writer.print("{d}", .{timestamp}),
             .iso8601 => {
                 // Convert unix timestamp to ISO 8601 format
                 const unix_timestamp = @as(i64, @intCast(timestamp));
@@ -786,8 +803,7 @@ pub const Formatter = struct {
                 const minute = @as(u8, @intCast(@mod(@divFloor(day_seconds, 60), 60)));
                 const second = @as(u8, @intCast(@mod(day_seconds, 60)));
 
-                try std.fmt.format(
-                    result.writer(),
+                try writer.print(
                     "{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}Z",
                     .{ year, month, day, hour, minute, second },
                 );
@@ -795,9 +811,9 @@ pub const Formatter = struct {
             .custom => {
                 if (self.config.custom_timestamp_format) |fmt_str| {
                     _ = fmt_str;
-                    try std.fmt.format(result.writer(), "{d}", .{timestamp});
+                    try writer.print("{d}", .{timestamp});
                 } else {
-                    try std.fmt.format(result.writer(), "{d}", .{timestamp});
+                    try writer.print("{d}", .{timestamp});
                 }
             },
         }
@@ -805,7 +821,7 @@ pub const Formatter = struct {
 
     fn formatCustomPlaceholder(
         self: *Formatter,
-        result: *std.ArrayList(u8),
+        result: *std.Io.Writer,
         placeholder: Placeholder,
         level: types.LogLevel,
         message: []const u8,
@@ -821,7 +837,7 @@ pub const Formatter = struct {
                     metadata,
                 );
                 defer self.allocator.free(custom_result);
-                try result.appendSlice(custom_result);
+                try result.writeAll(custom_result);
             } else {
                 return FormatError.MissingHandler;
             }
