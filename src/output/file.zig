@@ -136,9 +136,8 @@ pub const FileHandler = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        if (self.file) |file| {
-            file.close();
-        }
+        _ = self.flush() catch {};
+        if (self.file) |file| file.close();
         self.circular_buffer.deinit();
         self.allocator.destroy(self);
     }
@@ -296,94 +295,165 @@ pub const FileHandler = struct {
         };
     }
 
+    // fn rotate(self: *Self) !void {
+    //     if (self.file) |file| {
+    //         // Create backup first
+    //         const backup_path = std.fmt.allocPrint(
+    //             self.allocator,
+    //             "{s}.tmp",
+    //             .{self.config.path},
+    //         ) catch |err| {
+    //             self.handleError(err, "Failed to allocate backup path for rotation");
+    //             return err;
+    //         };
+    //         defer self.allocator.free(backup_path);
+
+    //         file.close();
+    //         self.file = null;
+
+    //         // Safe rotation
+    //         std.fs.cwd().rename(self.config.path, backup_path) catch |err| {
+    //             self.handleError(err, "Failed to rename file for rotation");
+    //             return err;
+    //         };
+
+    //         // Rotate existing files
+    //         var i: usize = self.config.max_rotated_files;
+    //         while (i > 0) : (i -= 1) {
+    //             const old_path = std.fmt.allocPrint(
+    //                 self.allocator,
+    //                 "{s}.{d}",
+    //                 .{ self.config.path, i - 1 },
+    //             ) catch |err| {
+    //                 self.handleError(err, "Failed to allocate old path for rotation");
+    //                 return err;
+    //             };
+    //             defer self.allocator.free(old_path);
+
+    //             // Skip if this is the highest index
+    //             if (i == self.config.max_rotated_files) {
+    //                 // Delete the highest index file if it exists
+    //                 std.fs.cwd().deleteFile(old_path) catch |err| switch (err) {
+    //                     error.FileNotFound => {}, // Ignore if file doesn't exist
+    //                     else => {}, // Ignore other errors and continue
+    //                 };
+    //                 continue;
+    //             }
+
+    //             const new_path = try std.fmt.allocPrint(
+    //                 self.allocator,
+    //                 "{s}.{d}",
+    //                 .{ self.config.path, i },
+    //             );
+    //             defer self.allocator.free(new_path);
+
+    //             // Try to rename, ignore errors if file doesn't exist
+    //             std.fs.cwd().rename(old_path, new_path) catch |err| switch (err) {
+    //                 error.FileNotFound => continue,
+    //                 else => |e| {
+    //                     self.handleError(e, "Failed to rotate old log file");
+    //                     continue;
+    //                 },
+    //             };
+    //         }
+
+    //         std.fs.cwd().rename(self.config.path, backup_path) catch |err| switch (err) {
+    //             error.FileNotFound => {}, // Might happen if log file was deleted
+    //             else => {}, // Ignore other errors and continue
+    //         };
+
+    //         // Compress the rotated file if needed
+    //         if (self.config.compression == .gzip) {
+    //             const compressed_path = try std.fmt.allocPrint(
+    //                 self.allocator,
+    //                 "{s}.gz",
+    //                 .{backup_path},
+    //             );
+    //             defer self.allocator.free(compressed_path);
+
+    //             self.compressFile(backup_path, compressed_path) catch {};
+    //             std.fs.cwd().deleteFile(backup_path) catch {};
+    //         }
+
+    //         // Create new file
+    //         self.file = std.fs.cwd().createFile(self.config.path, .{}) catch |err| {
+    //             self.handleError(err, "Failed to create new log file after rotation");
+    //             return err;
+    //         };
+    //         self.current_size.store(0, .release);
+    //         const timestamp = std.time.timestamp();
+    //         self.config.last_rotation = timestamp;
+    //     }
+    // }
+
     fn rotate(self: *Self) !void {
         if (self.file) |file| {
-            // Create backup first
-            const backup_path = std.fmt.allocPrint(
-                self.allocator,
-                "{s}.tmp",
-                .{self.config.path},
-            ) catch |err| {
-                self.handleError(err, "Failed to allocate backup path for rotation");
-                return err;
-            };
-            defer self.allocator.free(backup_path);
-
+            // Close before rename
+            file.sync() catch {};
             file.close();
             self.file = null;
 
-            // Safe rotation
-            std.fs.cwd().rename(self.config.path, backup_path) catch |err| {
-                self.handleError(err, "Failed to rename file for rotation");
-                return err;
-            };
-
-            // Rotate existing files
+            // 1) Shift older files: path.(i-1) -> path.i
             var i: usize = self.config.max_rotated_files;
             while (i > 0) : (i -= 1) {
-                const old_path = std.fmt.allocPrint(
-                    self.allocator,
-                    "{s}.{d}",
-                    .{ self.config.path, i - 1 },
-                ) catch |err| {
-                    self.handleError(err, "Failed to allocate old path for rotation");
-                    return err;
-                };
-                defer self.allocator.free(old_path);
+                const from = try std.fmt.allocPrint(self.allocator, "{s}.{d}", .{ self.config.path, i - 1 });
+                const to = try std.fmt.allocPrint(self.allocator, "{s}.{d}", .{ self.config.path, i });
+                defer {
+                    self.allocator.free(from);
+                    self.allocator.free(to);
+                }
 
-                // Skip if this is the highest index
                 if (i == self.config.max_rotated_files) {
-                    // Delete the highest index file if it exists
-                    std.fs.cwd().deleteFile(old_path) catch |err| switch (err) {
-                        error.FileNotFound => {}, // Ignore if file doesn't exist
-                        else => {}, // Ignore other errors and continue
-                    };
+                    // delete highest index if present
+                    _ = std.fs.cwd().deleteFile(from) catch {};
                     continue;
                 }
 
-                const new_path = try std.fmt.allocPrint(
-                    self.allocator,
-                    "{s}.{d}",
-                    .{ self.config.path, i },
-                );
-                defer self.allocator.free(new_path);
-
-                // Try to rename, ignore errors if file doesn't exist
-                std.fs.cwd().rename(old_path, new_path) catch |err| switch (err) {
-                    error.FileNotFound => continue,
-                    else => |e| {
-                        self.handleError(e, "Failed to rotate old log file");
-                        continue;
-                    },
-                };
+                _ = std.fs.cwd().rename(from, to) catch {};
             }
 
-            std.fs.cwd().rename(self.config.path, backup_path) catch |err| switch (err) {
-                error.FileNotFound => {}, // Might happen if log file was deleted
-                else => {}, // Ignore other errors and continue
-            };
+            // 2) Stage current as .0 (not .tmp)
+            const zero_path = try std.fmt.allocPrint(self.allocator, "{s}.0", .{self.config.path});
+            defer self.allocator.free(zero_path);
 
-            // Compress the rotated file if needed
+            // We had renamed path -> path.tmp earlier; move that into .0 now.
+            const staged_tmp = try std.fmt.allocPrint(self.allocator, "{s}.tmp", .{self.config.path});
+            defer self.allocator.free(staged_tmp);
+
+            // If the tmp doesn't exist (edge cases), fall back to direct rename
+            if (std.fs.cwd().rename(staged_tmp, zero_path)) |_| {
+                // ok
+            } else |_| {
+                // if .tmp missing, try moving the live file (best effort)
+                _ = std.fs.cwd().rename(self.config.path, zero_path) catch {};
+            }
+
+            // 3) Optionally compress .0 -> .0.gz atomically
             if (self.config.compression == .gzip) {
-                const compressed_path = try std.fmt.allocPrint(
-                    self.allocator,
-                    "{s}.gz",
-                    .{backup_path},
-                );
-                defer self.allocator.free(compressed_path);
+                const gz_tmp = try std.fmt.allocPrint(self.allocator, "{s}.gz.tmp", .{zero_path});
+                const gz_final = try std.fmt.allocPrint(self.allocator, "{s}.gz", .{zero_path});
+                defer {
+                    self.allocator.free(gz_tmp);
+                    self.allocator.free(gz_final);
+                }
 
-                self.compressFile(backup_path, compressed_path) catch {};
-                std.fs.cwd().deleteFile(backup_path) catch {};
+                // Try compression; on failure, keep uncompressed .0
+                if (self.compressFile(zero_path, gz_tmp)) |_| {
+                    // Publish compressed atomically and remove .0
+                    _ = std.fs.cwd().rename(gz_tmp, gz_final) catch {};
+                    _ = std.fs.cwd().deleteFile(zero_path) catch {};
+                } else |e| {
+                    // Compression unavailable/failed; keep .0
+                    self.handleError(e, "Compression failed; kept uncompressed .0");
+                    _ = std.fs.cwd().deleteFile(gz_tmp) catch {};
+                }
             }
 
-            // Create new file
-            self.file = std.fs.cwd().createFile(self.config.path, .{}) catch |err| {
-                self.handleError(err, "Failed to create new log file after rotation");
-                return err;
-            };
+            // 4) Recreate the active log file
+
+            self.file = try std.fs.cwd().createFile(self.config.path, .{});
             self.current_size.store(0, .release);
-            const timestamp = std.time.timestamp();
-            self.config.last_rotation = timestamp;
+            self.config.last_rotation = std.time.timestamp();
         }
     }
 

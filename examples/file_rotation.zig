@@ -21,7 +21,7 @@ pub fn main() !void {
         .setMaxFileSize(1024) // 1KB - small size to trigger rotations quickly
         .setMaxRotatedFiles(3) // Keep 3 backup files
         // TODO: fix stackoverflow when enableRotation is true in rotate function
-        .enableRotation(false)
+        .enableRotation(true)
         .build(allocator);
 
     defer nexlog.deinit();
