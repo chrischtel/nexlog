@@ -4,6 +4,19 @@ const errors = @import("../core/errors.zig");
 const buffer = @import("../utils/buffer.zig");
 const handlers = @import("handlers.zig");
 
+fn gzipAvailable() bool {
+    // std gzip existed pre-0.15; gone in 0.15.1.
+    const has_std_gzip = @hasDecl(std.compress, "gzip");
+    return has_std_gzip;
+}
+
+var warned_no_gzip = std.atomic.Value(bool).init(false);
+fn warnNoGzipOnce() void {
+    if (!warned_no_gzip.swap(true, .acq_rel)) {
+        std.log.warn("nexlog: gzip compression is deprecated/disabled in this build (Zig 0.15+). Rotated files will be uncompressed.", .{});
+    }
+}
+
 const FileRotationError = error{
     NoSpaceLeft,
     InvalidUtf8,
@@ -102,6 +115,12 @@ pub const FileHandler = struct {
         if (config.buffer_size == 0) return error.InvalidBufferSize;
         if (config.max_size == 0) return error.InvalidMaxSize;
 
+        var cfg = config;
+        if (cfg.compression == .gzip and !comptime gzipAvailable()) {
+            warnNoGzipOnce();
+            cfg.compression = .none;
+        }
+
         var self = try allocator.create(Self);
         errdefer allocator.destroy(self);
 
@@ -110,7 +129,7 @@ pub const FileHandler = struct {
 
         self.* = .{
             .allocator = allocator,
-            .config = config,
+            .config = cfg,
             .file = null,
             .mutex = std.Thread.Mutex{},
             .circular_buffer = circular_buf,
@@ -278,22 +297,22 @@ pub const FileHandler = struct {
 
     fn compressFile(self: *Self, source_path: []const u8, dest_path: []const u8) !void {
         if (self.config.compression == .none) return;
-        var source_file = std.fs.cwd().openFile(source_path, .{}) catch |err| {
-            self.handleError(err, "Failed to open source file for compression");
-            return err;
-        };
+
+        if (!comptime gzipAvailable()) {
+            return error.ZlibNotImplemented;
+        }
+
+        var source_file = try std.fs.cwd().openFile(source_path, .{});
         defer source_file.close();
 
-        var dest_file = std.fs.cwd().createFile(dest_path, .{}) catch |err| {
-            self.handleError(err, "Failed to create destination file for compression");
-            return err;
-        };
+        var dest_file = try std.fs.cwd().createFile(dest_path, .{});
         defer dest_file.close();
 
-        std.compress.gzip.compress(source_file.reader(), dest_file.writer(), .{}) catch |err| {
-            self.handleError(err, "Failed to compress file");
-            return err;
-        };
+        if (comptime @hasDecl(std.compress, "gzip")) {
+            try std.compress.gzip.compress(source_file.reader(), dest_file.writer(), .{});
+        } else {
+            return error.ZlibNotImplemented;
+        }
     }
 
     fn rotate(self: *Self) !void {
