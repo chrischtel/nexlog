@@ -18,6 +18,9 @@ A powerful, fast, and beautifully simple logging library for Zig applications. B
 
 **Compatible with Zig 0.14 and 0.15.0-dev.877+0adcfd60f**
 
+> [!WARNING]  
+> Zig v0.15.1 dropped gzip compression support in the standard library. Coming with the next update, compressing rotated files with gzip will be unavailable. For further information, follow [this issue](https://github.com/chrischtel/nexlog/issues/40).
+
 ## Why nexlog?  
 
 After working with logging libraries across different languages, I found myself constantly missing features or fighting with overly complex APIs. nexlog was born from the simple idea that logging should be powerful when you need it, but never get in your way when you don't.
