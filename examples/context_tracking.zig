@@ -45,14 +45,14 @@ fn handleUserRequest(logger: *nexlog.Logger, user_id: []const u8) !void {
 fn authenticateUser(logger: *nexlog.Logger, user_id: []const u8) !void {
     logger.debug("Validating credentials for user {s}", .{user_id}, nexlog.hereWithContext(@src()));
     // Simulate auth work
-    std.time.sleep(10 * 1000000); // 10ms
+    std.Thread.sleep(10 * 1000000); // 10ms
     logger.debug("Credentials validated", .{}, nexlog.hereWithContext(@src()));
 }
 
 fn loadUserProfile(logger: *nexlog.Logger, user_id: []const u8) !void {
     logger.debug("Loading profile for user {s}", .{user_id}, nexlog.hereWithContext(@src()));
     // Simulate database work
-    std.time.sleep(20 * 1000000); // 20ms
+    std.Thread.sleep(20 * 1000000); // 20ms
     logger.debug("Profile loaded", .{}, nexlog.hereWithContext(@src()));
 }
 

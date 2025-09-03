@@ -149,7 +149,7 @@ pub const AsyncLogger = struct {
                 return error.DrainTimeout;
             }
 
-            std.time.sleep(1_000_000); // Sleep 1ms
+            std.Thread.sleep(1_000_000); // Sleep 1ms
         }
     }
 };

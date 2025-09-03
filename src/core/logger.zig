@@ -51,7 +51,7 @@ pub const Logger = struct {
             .allocator = allocator,
             .config = config,
             .mutex = std.Thread.Mutex{},
-            .handlers = std.ArrayList(handlers.LogHandler).init(allocator),
+            .handlers = .empty,
             .console_formatter = console_formatter,
             .file_formatter = file_formatter,
         };
@@ -97,7 +97,7 @@ pub const Logger = struct {
         for (self.handlers.items) |handler| {
             handler.deinit();
         }
-        self.handlers.deinit();
+        self.handlers.deinit(self.allocator);
         self.allocator.destroy(self);
     }
 
@@ -193,7 +193,7 @@ pub const Logger = struct {
 
     // Add a new handler
     pub fn addHandler(self: *Self, handler: handlers.LogHandler) !void {
-        try self.handlers.append(handler);
+        try self.handlers.append(self.allocator, handler);
     }
 
     // Remove a handler

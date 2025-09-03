@@ -431,22 +431,20 @@ fn benchmarkLoggerIntegrationWrapper(allocator: std.mem.Allocator) BenchmarkErro
 }
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+    const allocator = std.heap.smp_allocator;
 
     const iterations = 10_000;
-    var results = std.ArrayList(BenchmarkResult).init(allocator);
-    defer results.deinit();
+    var results: std.ArrayList(BenchmarkResult) = .empty;
+    defer results.deinit(allocator);
 
     // Run benchmarks
-    try results.append(try runBenchmark(allocator, "JSON Format", iterations, benchmarkJsonFormat));
-    try results.append(try runBenchmark(allocator, "Logfmt Format", iterations, benchmarkLogfmtFormat));
-    try results.append(try runBenchmark(allocator, "Custom Format", iterations, benchmarkCustomFormat));
-    try results.append(try runBenchmark(allocator, "Large Fields", iterations / 10, benchmarkLargeFields));
-    try results.append(try runBenchmark(allocator, "Many Fields", iterations / 2, benchmarkManyFields));
-    try results.append(try runBenchmark(allocator, "With Attributes", iterations, benchmarkWithAttributes));
-    try results.append(try runBenchmark(allocator, "Logger Integration", iterations, benchmarkLoggerIntegrationWrapper));
+    try results.append(allocator, try runBenchmark(allocator, "JSON Format", iterations, benchmarkJsonFormat));
+    try results.append(allocator, try runBenchmark(allocator, "Logfmt Format", iterations, benchmarkLogfmtFormat));
+    try results.append(allocator, try runBenchmark(allocator, "Custom Format", iterations, benchmarkCustomFormat));
+    try results.append(allocator, try runBenchmark(allocator, "Large Fields", iterations / 10, benchmarkLargeFields));
+    try results.append(allocator, try runBenchmark(allocator, "Many Fields", iterations / 2, benchmarkManyFields));
+    try results.append(allocator, try runBenchmark(allocator, "With Attributes", iterations, benchmarkWithAttributes));
+    try results.append(allocator, try runBenchmark(allocator, "Logger Integration", iterations, benchmarkLoggerIntegrationWrapper));
 
     // Print results
     printBenchmarkResults(results.items);

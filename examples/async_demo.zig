@@ -110,7 +110,7 @@ pub fn main() !void {
     try async_logger.flushAsync();
 
     // Wait a bit for processing to complete
-    std.time.sleep(100_000_000); // 100ms
+    std.Thread.sleep(100_000_000); // 100ms
 
     const final_stats = async_logger.getStats();
     const file_stats = file_handler.getStats();
@@ -153,6 +153,6 @@ fn workerThread(async_logger: *nexlog.AsyncLogger, thread_id: usize) void {
         };
 
         // Small delay to simulate work
-        std.time.sleep(1_000_000); // 1ms
+        std.Thread.sleep(1_000_000); // 1ms
     }
 }

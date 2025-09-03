@@ -48,38 +48,38 @@ pub const ConsoleHandler = struct {
 
         // Ultra-fast mode: minimal formatting for maximum throughput
         if (self.config.fast_mode) {
-            const final_writer = if (self.config.use_stderr)
-                std.io.getStdErr().writer()
+            var final_writer = if (self.config.use_stderr)
+                std.fs.File.stderr().writer(&.{})
             else
-                std.io.getStdOut().writer();
+                std.fs.File.stdout().writer(&.{});
 
             const timestamp = if (metadata) |m| m.timestamp else std.time.timestamp();
-            try final_writer.print("[{d}] {s}\n", .{ timestamp, message });
+            try final_writer.interface.print("[{d}] {s}\n", .{ timestamp, message });
             return;
         }
 
-        // Use stack buffer for common case to avoid allocation
-        var buffer: [2048]u8 = undefined;
-        var fba = std.heap.FixedBufferAllocator.init(&buffer);
-        const temp_allocator = fba.allocator();
-
-        var output = std.ArrayList(u8).init(temp_allocator);
-        const writer = output.writer();
+        var out_buf: [4096]u8 = undefined;
+        var writer = if (self.config.use_stderr)
+            std.fs.File.stderr().writer(&out_buf)
+        else
+            std.fs.File.stdout().writer(&out_buf);
 
         // Pre-calculate timestamp once
         const timestamp = if (metadata) |m| m.timestamp else std.time.timestamp();
 
         // Fast path: Simple format without metadata
-        if (metadata == null or (!self.config.show_source_location and !self.config.show_function and !self.config.show_thread_id)) {
+        if (metadata == null or (!self.config.show_source_location and
+            !self.config.show_function and !self.config.show_thread_id))
+        {
             if (self.config.enable_colors) {
-                try writer.print("{s}[{d}] [{s}]\x1b[0m {s}\n", .{
+                try writer.interface.print("{s}[{d}] [{s}]\x1b[0m {s}\n", .{
                     level.toColor(),
                     timestamp,
                     level.toString(),
                     message,
                 });
             } else {
-                try writer.print("[{d}] [{s}] {s}\n", .{
+                try writer.interface.print("[{d}] [{s}] {s}\n", .{
                     timestamp,
                     level.toString(),
                     message,
@@ -88,13 +88,13 @@ pub const ConsoleHandler = struct {
         } else {
             // Full format with metadata
             if (self.config.enable_colors) {
-                try writer.print("{s}[{d}] [{s}]\x1b[0m", .{
+                try writer.interface.print("{s}[{d}] [{s}]\x1b[0m", .{
                     level.toColor(),
                     timestamp,
                     level.toString(),
                 });
             } else {
-                try writer.print("[{d}] [{s}]", .{
+                try writer.interface.print("[{d}] [{s}]", .{
                     timestamp,
                     level.toString(),
                 });
@@ -105,28 +105,21 @@ pub const ConsoleHandler = struct {
                 if (self.config.show_source_location) {
                     // Cache basename to avoid repeated path parsing
                     const filename = std.fs.path.basename(m.file);
-                    try writer.print(" [{s}:{d}]", .{ filename, m.line });
+                    try writer.interface.print(" [{s}:{d}]", .{ filename, m.line });
                 }
 
                 if (self.config.show_function) {
-                    try writer.print(" [{s}]", .{m.function});
+                    try writer.interface.print(" [{s}]", .{m.function});
                 }
 
                 if (self.config.show_thread_id) {
-                    try writer.print(" [tid:{d}]", .{m.thread_id});
+                    try writer.interface.print(" [tid:{d}]", .{m.thread_id});
                 }
             }
 
-            try writer.print(" {s}\n", .{message});
+            try writer.interface.print(" {s}\n", .{message});
         }
-
-        // Single write to output stream
-        const final_writer = if (self.config.use_stderr)
-            std.io.getStdErr().writer()
-        else
-            std.io.getStdOut().writer();
-
-        try final_writer.writeAll(output.items);
+        try writer.interface.flush();
     }
 
     pub fn flush(self: *Self) !void {
@@ -148,12 +141,12 @@ pub const ConsoleHandler = struct {
 
     pub fn writeFormattedLog(self: *Self, formatted_message: []const u8) !void {
         // No level check needed here since the message is already formatted
-        const writer = if (self.config.use_stderr)
-            std.io.getStdErr().writer()
+        var writer: std.fs.File.Writer = if (self.config.use_stderr)
+            std.fs.File.stderr().writer(&.{})
         else
-            std.io.getStdOut().writer();
+            std.fs.File.stdout().writer(&.{});
 
         // Just write the already formatted message
-        try writer.print("{s}\n", .{formatted_message});
+        try writer.interface.print("{s}\n", .{formatted_message});
     }
 };

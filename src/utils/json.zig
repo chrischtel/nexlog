@@ -77,57 +77,57 @@ pub fn serializeLogEntry(
 }
 
 pub fn stringify(allocator: std.mem.Allocator, value: JsonValue) ![]u8 {
-    var list = std.ArrayList(u8).init(allocator);
-    errdefer list.deinit();
+    var writer: std.Io.Writer.Allocating = .init(allocator);
+    defer writer.deinit();
 
-    try stringifyValue(value, &list);
-    return list.toOwnedSlice();
+    try stringifyValue(value, &writer.writer);
+    return writer.toOwnedSlice();
 }
 
-fn stringifyValue(value: JsonValue, list: *std.ArrayList(u8)) !void {
+fn stringifyValue(value: JsonValue, writer: *std.Io.Writer) !void {
     switch (value) {
-        .null => try list.appendSlice("null"),
-        .bool => |b| try list.appendSlice(if (b) "true" else "false"),
-        .number => |n| try std.fmt.format(list.writer(), "{d}", .{n}),
+        .null => try writer.writeAll("null"),
+        .bool => |b| try writer.writeAll(if (b) "true" else "false"),
+        .number => |n| try writer.print("{d}", .{n}),
         .string => |s| {
-            try list.append('"');
-            try escapeString(s, list);
-            try list.append('"');
+            try writer.writeByte('"');
+            try escapeString(s, writer);
+            try writer.writeByte('"');
         },
         .array => |arr| {
-            try list.append('[');
+            try writer.writeByte('[');
             for (arr, 0..) |item, i| {
-                if (i > 0) try list.appendSlice(", ");
-                try stringifyValue(item, list);
+                if (i > 0) try writer.writeAll(", ");
+                try stringifyValue(item, writer);
             }
-            try list.append(']');
+            try writer.writeByte(']');
         },
         .object => |map| {
-            try list.append('{');
+            try writer.writeByte('{');
             var it = map.iterator();
             var first = true;
             while (it.next()) |entry| {
-                if (!first) try list.appendSlice(", ");
+                if (!first) try writer.writeAll(", ");
                 first = false;
-                try list.append('"');
-                try list.appendSlice(entry.key_ptr.*);
-                try list.appendSlice("\": ");
-                try stringifyValue(entry.value_ptr.*, list);
+                try writer.writeByte('"');
+                try writer.writeAll(entry.key_ptr.*);
+                try writer.writeAll("\": ");
+                try stringifyValue(entry.value_ptr.*, writer);
             }
-            try list.append('}');
+            try writer.writeByte('}');
         },
     }
 }
 
-fn escapeString(s: []const u8, list: *std.ArrayList(u8)) !void {
+fn escapeString(s: []const u8, writer: *std.Io.Writer) !void {
     for (s) |c| {
         switch (c) {
-            '"' => try list.appendSlice("\\\""),
-            '\\' => try list.appendSlice("\\\\"),
-            '\n' => try list.appendSlice("\\n"),
-            '\r' => try list.appendSlice("\\r"),
-            '\t' => try list.appendSlice("\\t"),
-            else => try list.append(c),
+            '"' => try writer.writeAll("\\\""),
+            '\\' => try writer.writeAll("\\\\"),
+            '\n' => try writer.writeAll("\\n"),
+            '\r' => try writer.writeAll("\\r"),
+            '\t' => try writer.writeAll("\\t"),
+            else => try writer.writeByte(c),
         }
     }
 }

@@ -59,14 +59,14 @@ pub const AsyncFileHandler = struct {
             .allocator = allocator,
             .config = config,
             .file = file,
-            .buffer = std.ArrayList(u8).init(allocator),
+            .buffer = .empty,
             .mutex = std.Thread.Mutex{},
             .bytes_written = end_pos,
             .formatter = formatter,
             .last_flush = std.time.timestamp(),
         };
 
-        try handler.buffer.ensureTotalCapacity(config.buffer_size);
+        try handler.buffer.ensureTotalCapacity(allocator, config.buffer_size);
 
         return handler;
     }
@@ -82,7 +82,7 @@ pub const AsyncFileHandler = struct {
             formatter.deinit();
         }
 
-        self.buffer.deinit();
+        self.buffer.deinit(self.allocator);
         self.allocator.destroy(self);
     }
 
@@ -101,11 +101,7 @@ pub const AsyncFileHandler = struct {
 
         // Format the log entry
         var format_buffer: [2048]u8 = undefined;
-        var fba = std.heap.FixedBufferAllocator.init(&format_buffer);
-        const temp_allocator = fba.allocator();
-
-        var output = std.ArrayList(u8).init(temp_allocator);
-        const writer = output.writer();
+        var writer: std.Io.Writer = .fixed(&format_buffer);
 
         // Simple file format: timestamp, level, message
         try writer.print("[{d}] [{s}]", .{ entry.timestamp, entry.level.toString() });
@@ -119,7 +115,7 @@ pub const AsyncFileHandler = struct {
         try writer.print(" {s}\n", .{entry.message});
 
         // Add to buffer
-        try self.buffer.appendSlice(output.items);
+        try self.buffer.appendSlice(self.allocator, writer.buffered());
 
         // Check if we need to flush due to buffer size or time
         const should_flush = self.buffer.items.len >= self.config.buffer_size or
