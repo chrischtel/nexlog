@@ -76,11 +76,12 @@ pub const AsyncConsoleHandler = struct {
 
         if (self.config.fast_mode) {
             // Ultra-fast mode: minimal formatting
-            try self.buffer.writer().print("[{d}] {s}\n", .{ entry.timestamp, entry.message });
+            try self.buffer.writer(self.allocator).print("[{d}] {s}\n", .{ entry.timestamp, entry.message });
         } else {
             // Use stack buffer for formatting to avoid additional allocations
             var format_buffer: [2048]u8 = undefined;
-            var writer: std.Io.Writer = .fixed(&format_buffer);
+            var fbs = std.io.fixedBufferStream(&format_buffer);
+            const writer = fbs.writer();
 
             // Fast path: Simple format without metadata
             if (entry.metadata == null or (!self.config.show_source_location and !self.config.show_function and !self.config.show_thread_id)) {
@@ -132,20 +133,30 @@ pub const AsyncConsoleHandler = struct {
                 try writer.print(" {s}\n", .{entry.message});
             }
 
-            try self.buffer.appendSlice(writer.buffered());
+            try self.buffer.appendSlice(self.allocator, fbs.getWritten());
         }
 
         // Write to output in single operation (non-blocking for console)
-        const final_writer = if (self.config.use_stderr)
-            std.io.getStdErr().writer()
-        else
-            std.io.getStdOut().writer();
-
-        _ = final_writer.writeAll(self.buffer.items) catch |err| {
-            // For async logging, we can't propagate console write errors
-            // Log to stderr as fallback
-            std.debug.print("Console write error: {}\n", .{err});
-        };
+        var output_buffer: [1024]u8 = undefined;
+        if (self.config.use_stderr) {
+            var stderr_writer = std.fs.File.stderr().writer(&output_buffer);
+            const stderr = &stderr_writer.interface;
+            _ = stderr.writeAll(self.buffer.items) catch |err| {
+                std.debug.print("Console write error: {}\n", .{err});
+            };
+            stderr.flush() catch |err| {
+                std.debug.print("Console flush error: {}\n", .{err});
+            };
+        } else {
+            var stdout_writer = std.fs.File.stdout().writer(&output_buffer);
+            const stdout = &stdout_writer.interface;
+            _ = stdout.writeAll(self.buffer.items) catch |err| {
+                std.debug.print("Console write error: {}\n", .{err});
+            };
+            stdout.flush() catch |err| {
+                std.debug.print("Console flush error: {}\n", .{err});
+            };
+        }
     }
 
     pub fn flushAsync(self: *Self) !void {
@@ -156,7 +167,7 @@ pub const AsyncConsoleHandler = struct {
         else
             std.fs.File.stdout();
 
-        _ = try out.sync();
+        try out.sync();
     }
 
     /// Convert to generic AsyncLogHandler interface

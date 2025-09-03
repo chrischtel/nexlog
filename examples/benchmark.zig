@@ -263,18 +263,18 @@ fn benchmarkLargeFields(allocator: std.mem.Allocator) !void {
     defer formatter.deinit();
 
     // Create a large JSON object as a string
-    var large_json = std.ArrayList(u8).init(allocator);
-    defer large_json.deinit();
+    var large_json = std.ArrayList(u8){};
+    defer large_json.deinit(allocator);
 
-    try large_json.appendSlice("{\"data\":[");
+    try large_json.appendSlice(allocator, "{\"data\":[");
     var i: usize = 0;
-    while (i < 100) : (i += 1) {
-        if (i > 0) try large_json.appendSlice(",");
-        try large_json.appendSlice("{\"id\":");
-        try std.fmt.format(large_json.writer(), "{d}", .{i});
-        try large_json.appendSlice(",\"value\":\"some data\"}");
+    while (i < 1000) : (i += 1) {
+        if (i > 0) try large_json.appendSlice(allocator, ",");
+        try large_json.appendSlice(allocator, "{\"id\":");
+        try std.fmt.format(large_json.writer(allocator), "{d}", .{i});
+        try large_json.appendSlice(allocator, ",\"value\":\"some data\"}");
     }
-    try large_json.appendSlice("]}");
+    try large_json.appendSlice(allocator, "]}");
 
     const fields = [_]format.StructuredField{
         .{
@@ -318,8 +318,8 @@ fn benchmarkManyFields(allocator: std.mem.Allocator) !void {
     defer formatter.deinit();
 
     // Create many fields
-    var fields = std.ArrayList(format.StructuredField).init(allocator);
-    defer fields.deinit();
+    var fields = std.ArrayList(format.StructuredField){};
+    defer fields.deinit(allocator);
 
     var i: usize = 0;
     while (i < 50) : (i += 1) {
@@ -329,7 +329,7 @@ fn benchmarkManyFields(allocator: std.mem.Allocator) !void {
         var value_buf: [20]u8 = undefined;
         const value = std.fmt.bufPrint(&value_buf, "value_{d}", .{i}) catch continue;
 
-        try fields.append(.{
+        try fields.append(allocator, .{
             .name = name,
             .value = value,
         });

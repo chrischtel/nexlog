@@ -123,7 +123,13 @@ pub const JsonHandler = struct {
             };
             self.has_written = true;
         } else {
-            std.io.getStdOut().writer().print("{s}\n", .{json_str}) catch {
+            var stdout_buffer: [1024]u8 = undefined;
+            var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+            const stdout = &stdout_writer.interface;
+            stdout.print("{s}\n", .{json_str}) catch {
+                return errors.Error.IOError;
+            };
+            stdout.flush() catch {
                 return errors.Error.IOError;
             };
         }
@@ -155,8 +161,8 @@ pub const JsonHandler = struct {
 
             const json_wrapper = std.fmt.bufPrint(
                 buf,
-                "{{ \"message\": {s} }}",
-                .{std.fmt.fmtSliceEscapeUpper(formatted_message)},
+                "{{ \"message\": \"{s}\" }}",
+                .{formatted_message},
             ) catch {
                 // Fallback to direct writing if formatting fails
                 file.writeAll(formatted_message) catch {
@@ -171,7 +177,13 @@ pub const JsonHandler = struct {
             };
             self.has_written = true;
         } else {
-            std.io.getStdOut().writer().print("{s}\n", .{formatted_message}) catch {
+            var stdout_buffer: [1024]u8 = undefined;
+            var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+            const stdout = &stdout_writer.interface;
+            stdout.print("{s}\n", .{formatted_message}) catch {
+                return errors.Error.IOError;
+            };
+            stdout.flush() catch {
                 return errors.Error.IOError;
             };
         }
