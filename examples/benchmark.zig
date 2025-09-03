@@ -83,8 +83,8 @@ fn runBenchmark(
     allocator: std.mem.Allocator,
     name: []const u8,
     iterations: usize,
-    comptime benchmarkFn: fn (allocator: std.mem.Allocator) BenchmarkError!void,
-) BenchmarkError!BenchmarkResult {
+    comptime benchmarkFn: fn (allocator: std.mem.Allocator) anyerror!void,
+) anyerror!BenchmarkResult {
     var timer = try std.time.Timer.start();
     var total_time_ns: u64 = 0;
 
