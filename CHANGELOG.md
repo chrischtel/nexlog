@@ -2,24 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.2] - 2025-09-03
+
+### 💼 Other
+
+- Soft-deprecate on Zig v0.15.1; guard std.compress.gzip; fix cfg usage
+
 ## [0.7.1] - 2025-07-18
 
 ### 🐛 Bug Fixes
 
 - Return AlreadyInitialized error instead of ConfigError on double init
-- Unreachable Crash in BufferPool.release()
-- Add errdefer cleanup to prevent memory leaks in Logger.init()
-- Return error instead of silent failure in Pool.release()
-- Prevent division by zero in Pool.updateAverageWaitTime()
-- Prevent null dereference after file creation failure
-- Prevent array bounds violation in CircularBuffer write operation
-- Add errdefer cleanup to prevent memory leaks in Logger.init()
 
 ### ⚙️ Miscellaneous Tasks
 
 - Add git-cliff config for changelog generation
 - Cleanup repository
-- Bump version to 0.7.1
+- Update changelog for v0.7.1
 
 ## [0.7.0] - 2025-07-18
 
