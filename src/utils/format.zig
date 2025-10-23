@@ -1,52 +1,8 @@
 // utils/format.zig
 const std = @import("std");
 const types = @import("../core/types.zig");
-
-pub const StructuredField = struct {
-    name: []const u8,
-    value: []const u8,
-    attributes: ?std.StringHashMap(u8) = null,
-};
-
-pub const FieldValue = union(enum) {
-    string: []const u8,
-    integer: i64,
-    float: f64,
-    boolean: bool,
-    array: []const FieldValue,
-    object: std.StringHashMap(FieldValue),
-    null,
-
-    pub fn format(self: FieldValue, writer: *std.Io.Writer) !void {
-        switch (self) {
-            .string => |str| try writer.print("\"{s}\"", .{str}),
-            .integer => |i| try writer.print("{d}", .{i}),
-            .float => |f| try writer.print("{d}", .{f}),
-            .boolean => |b| try writer.print("{}", .{b}),
-            .array => |arr| {
-                try writer.writeAll("[");
-                for (arr, 0..) |item, i| {
-                    if (i > 0) try writer.writeAll(", ");
-                    try item.format(writer);
-                }
-                try writer.writeAll("]");
-            },
-            .object => |map| {
-                try writer.writeAll("{");
-                var it = map.iterator();
-                var first = true;
-                while (it.next()) |entry| {
-                    if (!first) try writer.writeAll(", ");
-                    try writer.print("\"{s}\": ", .{entry.key_ptr.*});
-                    try entry.value_ptr.*.format(writer);
-                    first = false;
-                }
-                try writer.writeAll("}");
-            },
-            .null => try writer.writeAll("null"),
-        }
-    }
-};
+const StructuredField = @import("../core/types.zig").StructuredField;
+const FieldValue = @import("../core/types.zig").FieldValue;
 
 /// Format placeholder types
 pub const PlaceholderType = enum {
