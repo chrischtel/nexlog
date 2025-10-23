@@ -8,6 +8,7 @@ const console = @import("../output/console.zig");
 const file = @import("../output/file.zig");
 const network = @import("../output/network.zig");
 const format = @import("../utils/format.zig");
+
 pub const Logger = struct {
     const Self = @This();
 
@@ -149,8 +150,63 @@ pub const Logger = struct {
         }
     }
 
+    pub fn logStructured(
+        self: *Self,
+        level: types.LogLevel,
+        message: []const u8, // Keep the main textual message
+        fields: types.StructuredData,
+        metadata: ?types.LogMetadata,
+    ) !void {
+        if (@intFromEnum(level) < @intFromEnum(self.config.min_level)) {
+            return;
+        }
+
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        // Iterate through handlers and dispatch the structured data
+        for (self.handlers.items) |handler| {
+            // Option A: Add a new handler method
+            // handler.writeStructuredLog(level, message, fields, metadata) catch |log_error| { ... };
+
+            // Option B: Pass structured data through formatter (requires formatter updates)
+            // This might be cleaner initially, letting the formatter decide output
+            const formatter = if (handler.handler_type == .console) self.console_formatter else self.file_formatter;
+            if (formatter) |fmt| {
+                // Need a way for formatter to handle structured input directly
+                // or format it based on its config (.json, .logfmt, etc.)
+                const formatted_output = try fmt.formatStructuredWithFields(
+                    level,
+                    message,
+                    fields,
+                    metadata,
+                    // Maybe pass a hint about the handler type if needed
+                );
+                defer self.allocator.free(formatted_output);
+                handler.writeFormattedLog(formatted_output) catch |log_error| {
+                    std.debug.print("Handler error: {}\n", .{log_error});
+                };
+            } else {
+                // Fallback if no formatter? Log simplified string? Error?
+                // Maybe just log the message part via writeLog?
+                handler.writeLog(level, message, metadata) catch |log_error| {
+                    std.debug.print("Handler error: {}\n", .{log_error});
+                };
+            }
+        }
+    }
     // === Convenience (Infallible) Methods ===
 
+    pub fn infoStructured(self: *Self, message: []const u8, fields: types.StructuredData, metadata: ?types.LogMetadata) void {
+        _ = self.logStructured(.info, message, fields, metadata) catch |log_error| {
+            std.debug.print("Logger.infoStructured error: {}\n", .{log_error});
+        };
+        // Note: Flushing might not be desired here by default like in simple .info()
+    }
+
+    pub fn tryInfoStructured(self: *Self, message: []const u8, fields: types.StructuredData, metadata: ?types.LogMetadata) !void {
+        try self.logStructured(.info, message, fields, metadata);
+    }
     /// Logs an info-level message without the caller having to use `try` or `catch`.
     pub fn info(self: *Self, comptime fmt: []const u8, args: anytype, metadata: ?types.LogMetadata) void {
         _ = self.log(.info, fmt, args, metadata) catch |log_error| {
