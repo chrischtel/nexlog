@@ -207,6 +207,11 @@ pub const Logger = struct {
     pub fn tryInfoStructured(self: *Self, message: []const u8, fields: types.StructuredData, metadata: ?types.LogMetadata) !void {
         try self.logStructured(.info, message, fields, metadata);
     }
+
+    pub fn tryWarnStructured(self: *Self, message: []const u8, fields: types.StructuredData, metadata: ?types.LogMetadata) !void {
+        try self.logStructured(.warn, message, fields, metadata);
+    }
+
     /// Logs an info-level message without the caller having to use `try` or `catch`.
     pub fn info(self: *Self, comptime fmt: []const u8, args: anytype, metadata: ?types.LogMetadata) void {
         _ = self.log(.info, fmt, args, metadata) catch |log_error| {

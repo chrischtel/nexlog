@@ -49,6 +49,11 @@ pub const Pool = utils.pool.Pool;
 pub const JsonValue = utils.json.JsonValue;
 pub const JsonError = utils.json.JsonError;
 
+pub const StructuredField = core.types.StructuredField;
+pub const FieldValue = core.types.FieldValue;
+pub const StructuredData = core.types.StructuredData;
+// Optional: Add this if you defined and need the old st
+
 pub const BufferHealth = utils.buffer.BufferHealth;
 pub const BufferStats = utils.buffer.BufferStats;
 

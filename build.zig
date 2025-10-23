@@ -65,7 +65,7 @@ pub fn build(b: *std.Build) void {
         .{ .file = "examples/json_logging.zig", .name = "example_4" },
         .{ .file = "examples/logger_integration.zig", .name = "example_5" },
         .{ .file = "examples/structured_logging.zig", .name = "example_6" },
-        .{ .file = "examples/benchmark.zig", .name = "bench" },
+        //.{ .file = "examples/benchmark.zig", .name = "bench" },
         .{ .file = "examples/metadata_ergonomics.zig", .name = "example_7" },
         .{ .file = "examples/formatting_test.zig", .name = "example_8" },
         .{ .file = "examples/context_tracking.zig", .name = "example_9" },

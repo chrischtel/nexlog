@@ -1,7 +1,13 @@
 const std = @import("std");
 const nexlog = @import("nexlog");
+
+// Import the necessary types directly via nexlog (assuming re-export)
+// If not re-exported, use: const types = @import("nexlog").core.types;
 const format = nexlog.utils.format;
 const types = nexlog.core.types;
+const StructuredField = nexlog.StructuredField;
+const FieldValue = nexlog.FieldValue;
+const LogLevel = nexlog.LogLevel; // Import LogLevel for clarity
 
 pub fn main() !void {
     // Create a general purpose allocator
@@ -18,8 +24,8 @@ pub fn main() !void {
     // Example 3: Custom format
     try customFormatExample(allocator);
 
-    // Example 4: Complex nested structures
-    try nestedStructuresExample(allocator);
+    // Example 4: Mixed data types (previously nested structures example, now using FieldValue)
+    try mixedDataTypesExample(allocator); // Renamed for clarity
 }
 
 fn jsonExample(allocator: std.mem.Allocator) !void {
@@ -35,23 +41,14 @@ fn jsonExample(allocator: std.mem.Allocator) !void {
     var formatter = try format.Formatter.init(allocator, config);
     defer formatter.deinit();
 
-    // Create structured fields
-    const fields = [_]format.StructuredField{
-        .{
-            .name = "user_id",
-            .value = "12345",
-            .attributes = null,
-        },
-        .{
-            .name = "request_duration_ms",
-            .value = "150",
-            .attributes = null,
-        },
-        .{
-            .name = "tags",
-            .value = "api,v2",
-            .attributes = null,
-        },
+    // --- UPDATED fields definition ---
+    const fields = [_]StructuredField{
+        .{ .name = "user_id", .value = .{ .string = "12345" } },
+        .{ .name = "request_duration_ms", .value = .{ .integer = 150 } }, // Use integer
+        .{ .name = "success", .value = .{ .boolean = true } }, // Use boolean
+        .{ .name = "retry_attempt", .value = .{ .null = {} } }, // Use null
+        .{ .name = "response_code", .value = .{ .integer = 200 } },
+        .{ .name = "tags", .value = .{ .string = "api,v2" } }, // Keep as string
     };
 
     // Create metadata
@@ -63,9 +60,9 @@ fn jsonExample(allocator: std.mem.Allocator) !void {
         .function = "processRequest",
     };
 
-    // Format the log entry
-    const formatted = try formatter.formatStructured(
-        .info,
+    // --- UPDATED formatter call ---
+    const formatted = try formatter.formatStructuredWithFields(
+        LogLevel.info, // Pass LogLevel directly
         "User profile accessed",
         &fields,
         metadata,
@@ -88,23 +85,13 @@ fn logfmtExample(allocator: std.mem.Allocator) !void {
     var formatter = try format.Formatter.init(allocator, config);
     defer formatter.deinit();
 
-    // Create structured fields
-    const fields = [_]format.StructuredField{
-        .{
-            .name = "user_id",
-            .value = "12345",
-            .attributes = null,
-        },
-        .{
-            .name = "request_duration_ms",
-            .value = "150",
-            .attributes = null,
-        },
-        .{
-            .name = "tags",
-            .value = "api,v2",
-            .attributes = null,
-        },
+    // --- UPDATED fields definition ---
+    const fields = [_]StructuredField{
+        .{ .name = "user_id", .value = .{ .string = "12345" } },
+        .{ .name = "request_duration_ms", .value = .{ .integer = 150 } }, // Use integer
+        .{ .name = "success", .value = .{ .boolean = true } }, // Use boolean
+        .{ .name = "tags", .value = .{ .string = "api,v2" } }, // String needing potential quotes
+        .{ .name = "ip_address", .value = .{ .string = "192.168.1.10" } }, // String not needing quotes
     };
 
     // Create metadata
@@ -116,9 +103,9 @@ fn logfmtExample(allocator: std.mem.Allocator) !void {
         .function = "processRequest",
     };
 
-    // Format the log entry
-    const formatted = try formatter.formatStructured(
-        .info,
+    // --- UPDATED formatter call ---
+    const formatted = try formatter.formatStructuredWithFields(
+        LogLevel.info,
         "User profile accessed",
         &fields,
         metadata,
@@ -143,23 +130,11 @@ fn customFormatExample(allocator: std.mem.Allocator) !void {
     var formatter = try format.Formatter.init(allocator, config);
     defer formatter.deinit();
 
-    // Create structured fields
-    const fields = [_]format.StructuredField{
-        .{
-            .name = "user_id",
-            .value = "12345",
-            .attributes = null,
-        },
-        .{
-            .name = "request_duration_ms",
-            .value = "150",
-            .attributes = null,
-        },
-        .{
-            .name = "tags",
-            .value = "api,v2",
-            .attributes = null,
-        },
+    // --- UPDATED fields definition ---
+    const fields = [_]StructuredField{
+        .{ .name = "user_id", .value = .{ .string = "12345" } },
+        .{ .name = "request_duration_ms", .value = .{ .integer = 150 } }, // Use integer
+        .{ .name = "tags", .value = .{ .string = "api,v2" } },
     };
 
     // Create metadata
@@ -171,9 +146,9 @@ fn customFormatExample(allocator: std.mem.Allocator) !void {
         .function = "processRequest",
     };
 
-    // Format the log entry
-    const formatted = try formatter.formatStructured(
-        .info,
+    // --- UPDATED formatter call ---
+    const formatted = try formatter.formatStructuredWithFields(
+        LogLevel.info,
         "User profile accessed",
         &fields,
         metadata,
@@ -183,8 +158,9 @@ fn customFormatExample(allocator: std.mem.Allocator) !void {
     std.debug.print("{s}\n", .{formatted});
 }
 
-fn nestedStructuresExample(allocator: std.mem.Allocator) !void {
-    std.debug.print("\n=== Nested Structures Example ===\n", .{});
+// Renamed from nestedStructuresExample
+fn mixedDataTypesExample(allocator: std.mem.Allocator) !void {
+    std.debug.print("\n=== Mixed Data Types Example (JSON Output) ===\n", .{});
 
     // Configure formatter for JSON output
     const config = format.FormatConfig{
@@ -196,23 +172,20 @@ fn nestedStructuresExample(allocator: std.mem.Allocator) !void {
     var formatter = try format.Formatter.init(allocator, config);
     defer formatter.deinit();
 
-    // Create structured fields with nested structures
-    const fields = [_]format.StructuredField{
-        .{
-            .name = "user",
-            .value = "{\"id\":\"12345\",\"name\":\"John Doe\",\"age\":30,\"active\":true}",
-            .attributes = null,
-        },
-        .{
-            .name = "permissions",
-            .value = "[\"read\",\"write\",\"admin\"]",
-            .attributes = null,
-        },
-        .{
-            .name = "request",
-            .value = "{\"method\":\"GET\",\"path\":\"/api/users\",\"duration_ms\":150}",
-            .attributes = null,
-        },
+    // --- UPDATED fields definition with various FieldValue types ---
+    // Note: The previous example used pre-formatted JSON strings.
+    // Now we represent the data more natively.
+    // If you need actual nested objects/arrays, the FieldValue union needs those variants.
+    // For now, keeping them as strings but showing other types too.
+    const fields = [_]StructuredField{
+        .{ .name = "user_id", .value = .{ .integer = 12345 } },
+        .{ .name = "user_name", .value = .{ .string = "John Doe" } },
+        .{ .name = "age", .value = .{ .integer = 30 } },
+        .{ .name = "active", .value = .{ .boolean = true } },
+        .{ .name = "balance", .value = .{ .float = 123.45 } },
+        .{ .name = "permissions", .value = .{ .string = "[\"read\",\"write\",\"admin\"]" } }, // Still string
+        .{ .name = "last_login", .value = .{ .null = {} } },
+        .{ .name = "request_details", .value = .{ .string = "{\"method\":\"GET\",\"path\":\"/api/users\",\"duration_ms\":150}" } }, // Still string
     };
 
     // Create metadata
@@ -224,10 +197,10 @@ fn nestedStructuresExample(allocator: std.mem.Allocator) !void {
         .function = "processRequest",
     };
 
-    // Format the log entry
-    const formatted = try formatter.formatStructured(
-        .info,
-        "Complex nested structure example",
+    // --- UPDATED formatter call ---
+    const formatted = try formatter.formatStructuredWithFields(
+        LogLevel.info,
+        "Complex data types example",
         &fields,
         metadata,
     );
