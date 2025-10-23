@@ -353,7 +353,7 @@ pub const Formatter = struct {
         }
     }
 
-    pub fn formatStructured(
+    pub fn formatStructuredFromStringFields(
         self: *Formatter,
         level: types.LogLevel,
         message: []const u8,
@@ -363,6 +363,44 @@ pub const Formatter = struct {
         // Use a larger stack buffer for structured logs (JSON can be verbose)
         var stack_buffer: [2048]u8 = undefined;
         return self.formatStructuredWithBuffer(&stack_buffer, level, message, fields, metadata);
+    }
+
+    // New method to handle StructuredData directly
+    pub fn formatStructuredWithFields(
+        self: *Formatter,
+        level: types.LogLevel,
+        message: []const u8,
+        fields: types.StructuredData, // <-- Takes the new type
+        metadata: ?types.LogMetadata,
+        // maybe buffer: []u8, like formatWithBuffer?
+    ) ![]const u8 {
+        // Use stack buffer / heap fallback logic like in format() / formatWithBuffer()
+        var stack_buffer: [self.config.structured_stack_buffer_size]u8 = undefined;
+        var fba = std.heap.FixedBufferAllocator.init(&stack_buffer);
+        const stack_allocator = fba.allocator();
+        var result: std.Io.Writer.Allocating = .init(stack_allocator);
+
+        const format_result = blk: {
+            switch (self.config.structured_format) {
+                .json => self.formatFieldsJson(&result.writer, level, message, fields, metadata) catch break :blk null,
+                .logfmt => self.formatFieldsLogfmt(&result.writer, level, message, fields, metadata) catch break :blk null,
+                .custom => self.formatFieldsCustom(&result.writer, level, message, fields, metadata) catch break :blk null,
+            }
+            break :blk result.written();
+        };
+
+        if (format_result) |stack_res| return self.allocator.dupe(u8, stack_res);
+
+        // Fallback to heap
+        result.deinit();
+        result = .init(self.allocator);
+        errdefer result.deinit();
+        switch (self.config.structured_format) {
+            .json => try self.formatFieldsJson(&result.writer, level, message, fields, metadata),
+            .logfmt => try self.formatFieldsLogfmt(&result.writer, level, message, fields, metadata),
+            .custom => try self.formatFieldsCustom(&result.writer, level, message, fields, metadata),
+        }
+        return result.toOwnedSlice();
     }
 
     /// Format structured with a provided buffer, falling back to heap if buffer is too small
